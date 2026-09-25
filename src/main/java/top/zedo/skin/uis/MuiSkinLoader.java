@@ -161,7 +161,8 @@ final class MuiSkinLoader {
         if (value.equals("false")) return false;
         if (skin.deviceType != null) {
             if (value.equals(skin.deviceType.name().toLowerCase())) return true;
-            if (value.equals("windows") && skin.deviceType == top.zedo.skin.DeviceType.WINDOWS) return true;
+            if (value.equals("windows") && (skin.deviceType == top.zedo.skin.DeviceType.WINDOWS
+                    || skin.deviceType == top.zedo.skin.DeviceType.MAC)) return true;
             if (value.equals("touch") && (skin.deviceType == top.zedo.skin.DeviceType.IOS
                     || skin.deviceType == top.zedo.skin.DeviceType.ANDROID)) return true;
             if (value.equals("phone") && skin.deviceType == top.zedo.skin.DeviceType.ANDROID) return true;

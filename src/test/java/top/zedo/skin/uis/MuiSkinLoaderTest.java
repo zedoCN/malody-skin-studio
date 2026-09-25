@@ -69,7 +69,7 @@ class MuiSkinLoaderTest {
     }
 
     @Test
-    void platformConditionsDoNotTreatMacAsWindows() throws IOException {
+    void macMatchesWindowsCompatibilityAndMacConditions() throws IOException {
         Path root = directory.resolve("skin.mui");
         Files.writeString(root, "@if windows\nwin\n  type=0\n@endif\n@if mac\nmac\n  type=0\n@endif\n");
         UISSkin skin = new UISSkin(root, new ExpressionCalculator(1280, 720, 720));
@@ -77,7 +77,7 @@ class MuiSkinLoaderTest {
 
         MuiSkinLoader.Result result = new MuiSkinLoader(skin, new HashMap<>()).load(root);
 
-        assertFalse(result.components().containsKey("win"));
+        assertTrue(result.components().containsKey("win"));
         assertTrue(result.components().containsKey("mac"));
     }
 
