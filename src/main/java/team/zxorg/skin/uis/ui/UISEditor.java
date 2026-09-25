@@ -298,7 +298,7 @@ public class UISEditor extends HBox {
     public static void main(String[] args) {
         /*if (args.length == 1 & args[0].equals("DEBUG"))
             DEBUG = true;*/
-        ZXLogger.info("===== > ZXNoter Skin Editor < =====");
+        ZXLogger.info("===== > Malody Skin Studio < =====");
         ZXLogger.info("Version: " + VERSION + " Code: " + VERSION.getVersionCode());
         switch (VERSION.status()) {
             case RC -> {
@@ -315,7 +315,7 @@ public class UISEditor extends HBox {
             }
         }
 
-        ZXLogger.info("ZXNoter Skin Editor启动");
+        ZXLogger.info("Malody Skin Studio 启动");
 
 
         ZXLogger.info("初始化图形系统");
@@ -329,7 +329,7 @@ public class UISEditor extends HBox {
             scene.getStylesheets().addAll("resources/baseExpansionPack/color/dark.css");
             Stage stage = new Stage();
             stage.setScene(scene);
-            stage.setTitle("UIS Editor " + VERSION);
+            stage.setTitle("Malody Skin Studio " + VERSION);
             stage.show();
             if (args.length > 0) {
                 Path initialFile = Path.of(args[0]);
