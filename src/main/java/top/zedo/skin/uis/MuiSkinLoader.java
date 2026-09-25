@@ -5,6 +5,7 @@ import top.zedo.zxncore.ZXLogger;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.StringReader;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,20 +19,16 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /** Reads a MUI file and its includes into one fresh skin snapshot. */
 final class MuiSkinLoader {
-    private static final Pattern COMPONENT_NAME = Pattern.compile("([a-zA-Z_\\d]+)-?\\[([^\\]]+)\\]|([a-zA-Z_\\d]+)-?([a-zA-Z_\\d]*)");
-
     private final UISSkin skin;
     private final Map<String, Path> imagePaths;
     private final Set<Path> scannedDirectories = new HashSet<>();
     private final Set<Path> activeIncludes = new HashSet<>();
     private final HashMap<String, UISComponent> components = new HashMap<>();
     private int angle;
-    private int unit = 720;
+    private int unit = MuiRules.DEFAULT_UNIT_HEIGHT;
 
     MuiSkinLoader(UISSkin skin, Map<String, Path> imagePaths) {
         this.skin = skin;
@@ -57,7 +54,7 @@ final class MuiSkinLoader {
             if (scannedDirectories.add(directory)) {
                 indexImages(directory);
             }
-            try (BufferedReader reader = Files.newBufferedReader(normalized)) {
+            try (BufferedReader reader = new BufferedReader(new StringReader(MuiTextFile.read(normalized).text()))) {
                 List<UISComponent> currentComponents = new ArrayList<>();
                 Deque<Boolean> conditions = new ArrayDeque<>();
                 boolean skip = false;
@@ -133,7 +130,10 @@ final class MuiSkinLoader {
                     imagePaths.put(key(cache, image), image);
                 }
             }
-            case "@include" -> {
+            case "@include", "@includex" -> {
+                if (args[0].equals("@includex") && args.length != 3) {
+                    throw new IOException("@includex 缺少条件或文件名");
+                }
                 String include = args.length == 2 ? args[1] : conditionMatches(args[1]) ? args[2] : null;
                 if (include == null) return;
                 Path included = directory.resolve(include);
@@ -154,14 +154,24 @@ final class MuiSkinLoader {
     }
 
     private boolean conditionMatches(String condition) {
-        if (condition.equals("true") || skin.deviceType != null && condition.equalsIgnoreCase(skin.deviceType.name())) {
+        String value = condition.toLowerCase();
+        if (value.equals("true")) {
             return true;
         }
+        if (value.equals("false")) return false;
+        if (skin.deviceType != null) {
+            if (value.equals(skin.deviceType.name().toLowerCase())) return true;
+            if (value.equals("windows") && skin.deviceType == top.zedo.skin.DeviceType.WINDOWS) return true;
+            if (value.equals("touch") && (skin.deviceType == top.zedo.skin.DeviceType.IOS
+                    || skin.deviceType == top.zedo.skin.DeviceType.ANDROID)) return true;
+            if (value.equals("phone") && skin.deviceType == top.zedo.skin.DeviceType.ANDROID) return true;
+        }
         double proportion = skin.getExpressionCalculator().getCanvasWidth() / skin.getExpressionCalculator().getCanvasHeight();
-        boolean less = condition.contains("<");
+        if (!Double.isFinite(proportion)) return false;
+        boolean less = condition.startsWith("<");
         try {
             double threshold = Double.parseDouble(condition.replaceAll("[<>]", ""));
-            return less ? proportion < threshold : proportion > threshold;
+            return less ? proportion <= threshold : proportion >= threshold;
         } catch (NumberFormatException ignored) {
             return false;
         }
@@ -204,21 +214,27 @@ final class MuiSkinLoader {
     }
 
     private static List<String> parseComponentNames(String line) {
-        if (!line.contains("[") || !line.contains("]")) return List.of(line.trim());
+        line = line.trim();
+        if (!line.contains("[") && !line.contains("]")) return List.of(line);
+        int open = line.indexOf('[');
+        if (open <= 0 || !line.endsWith("]") || line.indexOf(']', open) != line.length() - 1) {
+            throw new IllegalArgumentException("无效的批量组件名: " + line);
+        }
+        String prefix = line.substring(0, open);
+        String sequence = line.substring(open + 1, line.length() - 1);
         List<String> names = new ArrayList<>();
-        Matcher matcher = COMPONENT_NAME.matcher(line.trim());
-        if (!matcher.find()) return names;
-        String prefix = matcher.group(1) != null ? matcher.group(1) : matcher.group(3);
-        String numbers = matcher.group(2);
-        if (numbers == null) {
-            names.add(matcher.group(4).isEmpty() ? prefix : prefix + "-" + matcher.group(4));
-        } else if (numbers.contains("-")) {
-            String[] range = numbers.split("-");
-            int start = Integer.parseInt(range[0].trim());
-            int end = Integer.parseInt(range[1].trim());
-            for (int i = start; i <= end; i++) names.add(prefix + "-" + i);
-        } else {
-            for (String number : numbers.split(",")) names.add(prefix + "-" + number.trim());
+        for (String part : sequence.split(",")) {
+            String[] range = part.trim().split("-", -1);
+            if (range.length == 1) {
+                names.add(prefix + Integer.parseInt(range[0].trim()));
+            } else if (range.length == 2) {
+                int start = Integer.parseInt(range[0].trim());
+                int end = Integer.parseInt(range[1].trim());
+                if (start > end || end - start > 10000) throw new IllegalArgumentException("无效的批量范围: " + part);
+                for (int i = start; i <= end; i++) names.add(prefix + i);
+            } else {
+                throw new IllegalArgumentException("无效的批量范围: " + part);
+            }
         }
         return names;
     }

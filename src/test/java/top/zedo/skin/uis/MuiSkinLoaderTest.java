@@ -37,6 +37,25 @@ class MuiSkinLoaderTest {
     }
 
     @Test
+    void expandsMixedRangesAndConditionalIncludes() throws IOException {
+        Path root = directory.resolve("skin.mui");
+        Files.writeString(root, "@version 4.3.7\n@includex <1.5 narrow.mui\n@includex >1.5 wide.mui\n"
+                + "_case-[1,3-4]\n  pos=10,20\n_case.2-[5-6]\n  pos=30,40\n");
+        Files.writeString(directory.resolve("narrow.mui"), "narrow\n  type=0\n");
+        Files.writeString(directory.resolve("wide.mui"), "wide\n  type=0\n");
+        UISSkin skin = new UISSkin(root, new ExpressionCalculator(1280, 720, 720));
+
+        MuiSkinLoader.Result result = new MuiSkinLoader(skin, new HashMap<>()).load(root);
+
+        assertTrue(result.components().containsKey("wide"));
+        assertFalse(result.components().containsKey("narrow"));
+        for (String name : new String[]{"_case-1", "_case-3", "_case-4", "_case.2-5", "_case.2-6"}) {
+            assertTrue(result.components().containsKey(name), name);
+        }
+        assertFalse(result.components().containsKey("_case-2"));
+    }
+
+    @Test
     void skippedSectionDoesNotExecuteIncludes() throws IOException {
         Path root = directory.resolve("skin.mui");
         Files.writeString(root, "@if false\n@if true\n@include missing.mui\n@unit 999\nignored\n  type=0\n@endif\n@endif\nnote\n  pos=0,0\n");
@@ -47,6 +66,19 @@ class MuiSkinLoaderTest {
         assertEquals(720, result.unit());
         assertFalse(result.components().containsKey("ignored"));
         assertTrue(result.components().containsKey("note"));
+    }
+
+    @Test
+    void platformConditionsDoNotTreatMacAsWindows() throws IOException {
+        Path root = directory.resolve("skin.mui");
+        Files.writeString(root, "@if windows\nwin\n  type=0\n@endif\n@if mac\nmac\n  type=0\n@endif\n");
+        UISSkin skin = new UISSkin(root, new ExpressionCalculator(1280, 720, 720));
+        skin.setDeviceType(top.zedo.skin.DeviceType.MAC);
+
+        MuiSkinLoader.Result result = new MuiSkinLoader(skin, new HashMap<>()).load(root);
+
+        assertFalse(result.components().containsKey("win"));
+        assertTrue(result.components().containsKey("mac"));
     }
 
     @Test
@@ -69,6 +101,19 @@ class MuiSkinLoaderTest {
             MuiSkinLoader.Result result = new MuiSkinLoader(skin, new HashMap<>()).load(path);
             assertFalse(result.components().isEmpty(), name);
         }
+    }
+
+    @Test
+    void resolvesNestedNumericDefinesFromLegacySkins() throws IOException {
+        Path root = directory.resolve("skin.mui");
+        Files.writeString(root, "@define Width 66\n@define Half {Width}/2\n@define Full {Width}+{Half}\n"
+                + "note\n  pos=50%+{Full},20\n  text={Full}\n");
+        ExpressionCalculator calculator = new ExpressionCalculator(1280, 720, 720);
+        UISSkin skin = new UISSkin(root, calculator);
+        UISComponent note = new MuiSkinLoader(skin, new HashMap<>()).load(root).components().get("note");
+
+        assertEquals(739, note.getExpressionVector("pos").getX());
+        assertEquals("66+66/2", note.getString("text", ""));
     }
 
     @Test

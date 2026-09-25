@@ -17,6 +17,7 @@ import top.zedo.skin.basis.RenderRectangle;
 import top.zedo.skin.uis.ExpressionCalculator;
 import top.zedo.skin.uis.ExpressionVector;
 import top.zedo.skin.uis.UISComponent;
+import top.zedo.skin.uis.MuiRules;
 import top.zedo.ui.component.LayerCanvasPane;
 
 /**
@@ -189,7 +190,8 @@ public abstract class AbstractComponentRenderer implements RenderInterface {
      * @return 是否受到3d
      */
     public boolean is3DLayout() {
-        return (getZindex() >= 1 & getZindex() < 99);
+        return getZindex() >= MuiRules.PERSPECTIVE_LAYER_FIRST
+                && getZindex() < MuiRules.PERSPECTIVE_LAYER_END;
     }
 
     public String getLayoutName() {
@@ -248,7 +250,7 @@ public abstract class AbstractComponentRenderer implements RenderInterface {
         size = component.getExpressionVector("size");*/
 
         rotate = component.getDouble("rotate", 0);
-        opacity = component.getInt("opacity", 100) / 100.;
+        opacity = component.getInt("opacity", MuiRules.FULL_OPACITY) / (double) MuiRules.FULL_OPACITY;
         scale = component.getExpressionVector("scale", "1px,1px");
         skew = component.getExpressionVector("skew");
 
@@ -373,32 +375,6 @@ public abstract class AbstractComponentRenderer implements RenderInterface {
         }
 
 
-        boolean isToBig = false;
-
-        int maxSize = 2000;
-        //限制图片尺寸
-        if (Math.abs(ul.getX()) > maxSize || Math.abs(ul.getY()) > maxSize ||
-                Math.abs(ur.getX()) > maxSize || Math.abs(ur.getY()) > maxSize ||
-                Math.abs(lr.getX()) > maxSize || Math.abs(lr.getY()) > maxSize ||
-                Math.abs(ll.getX()) > maxSize || Math.abs(ll.getY()) > maxSize) {
-            /*ZXLogger.info("图片尺寸过大，无法绘制: " + ul.getX() + "," + ul.getY() + "," + ur.getX() + "," + ur.getY() + "," + lr.getX() + "," + lr.getY() + "," + ll.getX() + "," + ll.getY());
-            return;*/
-            isToBig = true;
-        }
-
-        // 判断绘制的图片是否在屏幕内
-        double canvasWidth = ec.getCanvasWidth();
-        double canvasHeight = ec.getCanvasHeight();
-
-        // 判断绘制的图片是否完全不在屏幕内
-        if ((ul.getX() < 0 && ur.getX() < 0 && lr.getX() < 0 && ll.getX() < 0) ||
-                (ul.getX() > canvasWidth && ur.getX() > canvasWidth && lr.getX() > canvasWidth && ll.getX() > canvasWidth) ||
-                (ul.getY() < 0 && ur.getY() < 0 && lr.getY() < 0 && ll.getY() < 0) ||
-                (ul.getY() > canvasHeight && ur.getY() > canvasHeight && lr.getY() > canvasHeight && ll.getY() > canvasHeight)) {
-            //return;
-        }
-
-
         //将坐标应用到变换
         pt.setUlx(ul.getX());
         pt.setUly(ul.getY());
@@ -410,94 +386,6 @@ public abstract class AbstractComponentRenderer implements RenderInterface {
         pt.setLly(ll.getY());
 
 
-        // 尺寸检查和限制
-        /*w = Math.min(w, 2000);
-        h = Math.min(h, 2000);*/
-
-        //尝试优化
-        /*if (isToBig) {
-            //裁剪渲染  只渲染屏幕内的部分 裁剪掉屏幕外的优化性能
-
-            // 图像源尺寸
-            double sw = tex.getWidth();  // 使用整个图像的宽度
-            double sh = tex.getHeight(); // 使用整个图像的高度
-
-            //材质变换
-            UISPerspectiveTransform texPt = new UISPerspectiveTransform();
-            texPt.setFixedSize(sw, sh);
-            texPt.setUnitQuadMapping(ul.getX(), ul.getY(), ur.getX(), ur.getY()
-                    , lr.getX(), lr.getY(), ll.getX(), ll.getY());
-
-
-            //图形上边
-            Line2D lineU = new Line2D((float) ul.getX(), (float) ul.getY(), (float) ur.getX(), (float) ur.getY());
-            //距离左上角距离
-            double dist = lineU.ptLineDist(0, 0);
-
-
-            //限制在屏幕内的图形区域
-            Point2D inUL = new Point2D(Math.max(0, Math.min(canvasWidth, ul.getX())), Math.max(0, Math.min(canvasHeight, ul.getY())));
-            Point2D inUR = new Point2D(Math.max(0, Math.min(canvasWidth, ur.getX())), Math.max(0, Math.min(canvasHeight, ur.getY())));
-            Point2D inLR = new Point2D(Math.max(0, Math.min(canvasWidth, lr.getX())), Math.max(0, Math.min(canvasHeight, lr.getY())));
-            Point2D inLL = new Point2D(Math.max(0, Math.min(canvasWidth, ll.getX())), Math.max(0, Math.min(canvasHeight, ll.getY())));
-
-
-            // 计算屏幕内的图形区域在材质中的位置
-            Point2D texUL = texPt.untransform(ul);
-            Point2D texUR = texPt.untransform(ur);
-            Point2D texLR = texPt.untransform(lr);
-            Point2D texLL = texPt.untransform(ll);
-
-
-            //后面就不会写了
-
-            double texMinX = Math.min(texUL.getX(), Math.min(texUR.getX(), Math.min(texLR.getX(), texLL.getX())));
-            double texMinY = Math.min(texUL.getY(), Math.min(texUR.getY(), Math.min(texLR.getY(), texLL.getY())));
-            double texMaxX = Math.max(texUL.getX(), Math.max(texUR.getX(), Math.max(texLR.getX(), texLL.getX())));
-            double texMaxY = Math.max(texUL.getY(), Math.max(texUR.getY(), Math.max(texLR.getY(), texLL.getY())));
-
-            double texWidth = texMaxX - texMinX;
-            double texHeight = texMaxY - texMinY;
-
-
-            ul = texPt.transform(new Point2D(texMinX, texMinY));
-            ur = texPt.transform(new Point2D(texMinX + texWidth, texMinY));
-            lr = texPt.transform(new Point2D(texMinX + texWidth, texMinY + texHeight));
-            ll = texPt.transform(new Point2D(texMinX, texMinY + texHeight));
-
-
-            ul = texPt.transform(texUL);
-            ur = texPt.transform(texUR);
-            lr = texPt.transform(texLR);
-            ll = texPt.transform(texLL);
-
-
-            //将坐标应用到变换
-            pt.setUlx(ul.getX());
-            pt.setUly(ul.getY());
-            pt.setUrx(ur.getX());
-            pt.setUry(ur.getY());
-            pt.setLrx(lr.getX());
-            pt.setLry(lr.getY());
-            pt.setLlx(ll.getX());
-            pt.setLly(ll.getY());
-
-
-            // 计算裁剪后的材质在屏幕上的位置和尺寸
-            double dx = Math.min(ul.getX(), Math.min(ur.getX(), Math.min(lr.getX(), ll.getX())));
-            double dy = Math.min(ul.getY(), Math.min(ur.getY(), Math.min(lr.getY(), ll.getY())));
-            double dw = Math.max(ul.getX(), Math.max(ur.getX(), Math.max(lr.getX(), ll.getX()))) - dx;
-            double dh = Math.max(ul.getY(), Math.max(ur.getY(), Math.max(lr.getY(), ll.getY()))) - dy;
-
-
-            // 应用透视变换和绘制
-            gc.setEffect(pt);
-            // gc.drawImage(tex, texMinX, texMinY, texWidth, texHeight, dx, dy, dw, dh);
-            gc.drawImage(tex, x, y, w, h);
-
-        } else {
-
-        }*/
         gc.save();
         gc.setEffect(pt);
         gc.drawImage(tex, 0, 0, tex.getWidth(), tex.getHeight());

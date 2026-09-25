@@ -13,10 +13,9 @@ import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
+import top.zedo.skin.uis.MuiTextFile;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Collection;
@@ -55,6 +54,7 @@ public class UISCodeArea extends CodeArea {
     private final ExecutorService executor;
     private final PauseTransition autoSave = new PauseTransition(javafx.util.Duration.millis(200));
     private final Path file;
+    private final MuiTextFile.Decoded source;
     private final Runnable saved;
     private boolean dirty;
     private boolean disposed;
@@ -90,8 +90,13 @@ public class UISCodeArea extends CodeArea {
 
 
     public UISCodeArea(Path file, Runnable saved) throws IOException {
-        super(Files.readString(file));
+        this(file, saved, MuiTextFile.read(file));
+    }
+
+    private UISCodeArea(Path file, Runnable saved, MuiTextFile.Decoded source) {
+        super(source.text());
         this.file = file;
+        this.source = source;
         this.saved = saved;
 
 
@@ -130,7 +135,7 @@ public class UISCodeArea extends CodeArea {
     private void save() {
         if (!dirty) return;
         try {
-            Files.writeString(file, getText(), StandardCharsets.UTF_8);
+            source.write(file, getText());
             dirty = false;
             saved.run();
         } catch (IOException error) {

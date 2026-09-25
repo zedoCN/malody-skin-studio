@@ -114,6 +114,9 @@ public class UISCanvas extends LayerCanvasPane {
         if (skin == null)
             return;
 
+        // Includes and @if depend on the target aspect ratio during parsing.
+        configureCanvasSize();
+
         /*updateCanvasSize();
         skin.setDeviceType(deviceTypeChoiceBox.getValue());*/
         //updateCanvasSize();
@@ -129,18 +132,7 @@ public class UISCanvas extends LayerCanvasPane {
         /*if (autoReplayCheckBox.isSelected() & skin.updateRenderer(componentRenders, componentMap, this))
             resetTime();*/
 
-        {
-
-            double unitHeight = skin.unit;
-            //expressionCalculator.setUnitCanvasHeight(unitHeight * zoomRate);
-            double width = unitHeight * aspectRatio * zoomRate;
-            double height = unitHeight * zoomRate;
-            setMinSize(width, height);
-            setMaxSize(width, height);
-            expressionCalculator.setCanvasSize(width, height);
-            expressionCalculator.setUnitCanvasHeight(unitHeight);
-            //expressionCalculator.setSize(width, height);
-        }
+        configureCanvasSize();
 
 
         for (AbstractComponentRenderer component : componentMap.values()) {
@@ -150,6 +142,16 @@ public class UISCanvas extends LayerCanvasPane {
         UISSkin.sortRenders(componentRenders);
 
         //resetTime();
+    }
+
+    private void configureCanvasSize() {
+        double unitHeight = skin.unit;
+        double width = unitHeight * aspectRatio * zoomRate;
+        double height = unitHeight * zoomRate;
+        setMinSize(width, height);
+        setMaxSize(width, height);
+        expressionCalculator.setCanvasSize(width, height);
+        expressionCalculator.setUnitCanvasHeight(unitHeight);
     }
 
     public void setDeviceType(DeviceType deviceType) {

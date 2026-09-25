@@ -96,7 +96,7 @@ public class ExpressionVector {
 
     public double getY() {
         if (parent != null)
-            return expressionCalculator.getUnitCanvasHeight() - (parent.getH() + h);
+            return expressionCalculator.getCanvasHeight() - (parent.getH() + h);
         return y;
     }
 
@@ -104,7 +104,7 @@ public class ExpressionVector {
         yExpression = value;
         String[] values = value.split("\\$");
         if (values.length >= 2) {
-            h = expressionCalculator.calculateY(values[0]) + expressionCalculator.calculateX(values[1]) * index;
+            h = expressionCalculator.calculateY(values[0]) + expressionCalculator.calculateY(values[1]) * index;
         } else {
             h = expressionCalculator.calculateY(value);
         }

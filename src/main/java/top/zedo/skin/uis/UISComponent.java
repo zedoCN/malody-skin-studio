@@ -15,6 +15,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class UISComponent {
+    private static final Pattern VARIABLE = Pattern.compile("\\{([A-Za-z_][A-Za-z_0-9]*)}");
     public static final Image UNKNOWN;
 
     static {
@@ -161,18 +162,31 @@ public class UISComponent {
         String value = properties.getOrDefault(name, defaultValue);
         if (value == null)
             return null;
-        // 匹配{}差值变量并覆盖
-        Pattern pattern = Pattern.compile("\\{([^{}]+)}");
-        Matcher matcher = pattern.matcher(value);
+        boolean numeric = name.startsWith("pos") || name.startsWith("size") || name.startsWith("array")
+                || Set.of("rect", "fsize", "part", "rotate", "skew", "scale", "toggle", "opacity", "zindex")
+                .contains(name);
+        return resolveVariables(value, new HashSet<>(), numeric);
+    }
+
+    private String resolveVariables(String value, Set<String> resolving, boolean numeric) {
+        Matcher matcher = VARIABLE.matcher(value);
         StringBuilder result = new StringBuilder();
         while (matcher.find()) {
             String variableName = matcher.group(1);
-            String replacement = uisSkin.variable.getOrDefault(variableName, "(!未定义的变量: " + variableName + "!)");
+            String replacement = uisSkin.variable.get(variableName);
+            if (replacement == null) {
+                replacement = "(!未定义的变量: " + variableName + "!)";
+            } else if (!resolving.add(variableName)) {
+                replacement = "(!循环变量: " + variableName + "!)";
+            } else {
+                replacement = resolveVariables(replacement, resolving, numeric);
+                resolving.remove(variableName);
+                if (numeric) replacement = "(" + replacement + ")";
+            }
             matcher.appendReplacement(result, Matcher.quoteReplacement(replacement));
         }
-
         matcher.appendTail(result);
-        return result.toString().isEmpty() ? value : result.toString();
+        return result.toString();
     }
 
     public UISFrame getFrame(String name) {
@@ -188,8 +202,12 @@ public class UISComponent {
      */
     public int getInt(String name, int defaultValue) {
         try {
-            return Integer.parseInt(getString(name, ""));
-        } catch (NumberFormatException e) {
+            double value = ExpressionCalculator.calculateScalar(getString(name, ""));
+            if (!Double.isFinite(value) || value != Math.rint(value) || value < Integer.MIN_VALUE || value > Integer.MAX_VALUE) {
+                return defaultValue;
+            }
+            return (int) value;
+        } catch (IllegalArgumentException e) {
             return defaultValue;
         }
     }
@@ -226,8 +244,8 @@ public class UISComponent {
      */
     public double getDouble(String name, double defaultValue) {
         try {
-            return Double.parseDouble(getString(name, ""));
-        } catch (NumberFormatException e) {
+            return ExpressionCalculator.calculateScalar(getString(name, ""));
+        } catch (IllegalArgumentException e) {
             return defaultValue;
         }
     }
@@ -353,7 +371,7 @@ public class UISComponent {
             String parentName = value.substring(0, value.indexOf(" "));
             UISComponent parent = uisSkin.getComponent(parentName);
             if (parent != null)
-                return new ExpressionVector(expressionCalculator, value.substring(value.indexOf(" ") + 1), propertiesIndex.getOrDefault(name, 0), parent.getExpressionVector("pos"));
+                return new ExpressionVector(expressionCalculator, value.substring(value.indexOf(" ") + 1), propertiesIndex.getOrDefault(name, 0), parent.getExpressionVector(name));
         }
         return new ExpressionVector(expressionCalculator, value, propertiesIndex.getOrDefault(name, 0));
     }
@@ -371,7 +389,7 @@ public class UISComponent {
             String parentName = value.substring(0, value.indexOf(" "));
             UISComponent parent = uisSkin.getComponent(parentName);
             if (parent != null)
-                return new ExpressionVector(expressionCalculator, value.substring(value.indexOf(" ") + 1), propertiesIndex.getOrDefault(name, 0), parent.getExpressionVector("pos"));
+                return new ExpressionVector(expressionCalculator, value.substring(value.indexOf(" ") + 1), propertiesIndex.getOrDefault(name, 0), parent.getExpressionVector(name));
         }
         return new ExpressionVector(expressionCalculator, value, propertiesIndex.getOrDefault(name, 0));
     }

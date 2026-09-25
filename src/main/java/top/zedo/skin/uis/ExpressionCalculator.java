@@ -3,8 +3,6 @@ package top.zedo.skin.uis;
 import javafx.geometry.Point2D;
 import top.zedo.zxncore.ZXLogger;
 
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * 表达式计算器
@@ -61,7 +59,7 @@ public class ExpressionCalculator {
     }
 
     public ExpressionCalculator() {
-        this(0, 0, 720);
+        this(0, 0, MuiRules.DEFAULT_UNIT_HEIGHT);
     }
 
     public ExpressionCalculator(double canvasWidth, double canvasHeight, double unitCanvasHeight) {
@@ -146,29 +144,13 @@ public class ExpressionCalculator {
      * @return 值
      */
     private double calculateValue(String expression, double maxPixel) {
-        Pattern pattern = Pattern.compile("([+-]?\\d*\\.?\\d+)(%|px)?");
-        Matcher matcher = pattern.matcher(expression);
+        return MuiNumberExpression.evaluate(expression, pixelMagnification, maxPixel,
+                canvasWidth / MuiRules.WIDTH_UNIT_BASE);
+    }
 
-        double result = 0;
-
-        while (matcher.find()) {
-            String valueStr = matcher.group(1);
-            String unit = matcher.group(2);
-
-            double value = Double.parseDouble(valueStr);
-
-            if ("%".equals(unit)) {
-                // 百分比
-                result += value / 100.0 * maxPixel;
-            } else if ("px".equals(unit)) {
-                // 像素
-                result += value;
-            } else {
-                // 相对尺寸
-                result += value * pixelMagnification;
-            }
-        }
-
-        return result;
+    /** Evaluates a unitless UIS property such as toggle=1+2. */
+    static double calculateScalar(String expression) {
+        if (expression == null || expression.isBlank()) throw new IllegalArgumentException("空数值");
+        return MuiNumberExpression.evaluate(expression, 1, 0, 0);
     }
 }

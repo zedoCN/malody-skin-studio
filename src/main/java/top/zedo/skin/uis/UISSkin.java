@@ -51,7 +51,7 @@ public class UISSkin {
     /**
      * 单位 默认720
      */
-    int unit = 720;
+    int unit = MuiRules.DEFAULT_UNIT_HEIGHT;
 
     DeviceType deviceType = DeviceType.WINDOWS;
 

@@ -5,9 +5,12 @@ import javafx.scene.effect.PerspectiveTransform;
 import top.zedo.zxncore.ZXLogger;
 
 public class UISPerspectiveTransform {
-    private static final double a = 3.7832580504765276e-05;
-    private static final double b = -0.0041608166982776305;
-    private static final double c = 0.558138532712179;
+    // Empirical calibration from this editor's 2024 renderer (ab372008), not a MUI format rule.
+    // Emiria's UIS prototype records @angle but does not provide a matching 4.3.7 projection.
+    // Keep these coefficients until game output or reference frames can justify a new fit.
+    private static final double ANGLE_QUADRATIC = 3.7832580504765276e-05;
+    private static final double ANGLE_LINEAR = -0.0041608166982776305;
+    private static final double ANGLE_CONSTANT = 0.558138532712179;
     private double width = 0;
     private double height = 0;
 
@@ -17,14 +20,9 @@ public class UISPerspectiveTransform {
     private final float[][] tx = new float[3][3];
     private final float[][] itx = new float[3][3];
 
-    /**
-     * 计算角度补偿系数  为了适应Malody
-     *
-     * @param angle 原始角度
-     * @return 补偿后角度
-     */
+    /** Maps the MUI angle to the editor's visually calibrated projection angle. */
     private static double calculateCompensation(double angle) {
-        return (a * Math.pow(angle, 2) + b * angle + c) * angle;
+        return (ANGLE_QUADRATIC * Math.pow(angle, 2) + ANGLE_LINEAR * angle + ANGLE_CONSTANT) * angle;
     }
 
     public void setSize(double width, double height) {
@@ -32,11 +30,6 @@ public class UISPerspectiveTransform {
         this.width = width;
         this.height = height;
         update();
-    }
-
-    public void setFixedSize(double width, double height) {
-        this.width = width;
-        this.height = height;
     }
 
     public void setAngle(double angle) {

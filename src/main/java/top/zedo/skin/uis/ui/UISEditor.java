@@ -16,6 +16,9 @@ import top.zedo.skin.ResolutionInfo;
 import top.zedo.skin.SkinConfig;
 import top.zedo.skin.uis.UISCanvas;
 import top.zedo.skin.uis.SkinSnapshot;
+import top.zedo.skin.uis.MuiAudit;
+import top.zedo.skin.v.MspInspector;
+import top.zedo.skin.v.VEditorPane;
 import top.zedo.zxncore.ZXLogger;
 import top.zedo.zxncore.ZXVersion;
 
@@ -48,7 +51,7 @@ public class UISEditor extends HBox {
         }
     };
     //private File lastDirectory = new File(System.getProperty("user.dir")); // 记录上一次选择的目录
-    Button openFileButton = new Button("打开mui文件") {
+    Button openFileButton = new Button("打开皮肤") {
         {
             setOnAction(event -> {
                 Path file = Path.of(SkinConfig.data.lastOpenDir);
@@ -58,7 +61,7 @@ public class UISEditor extends HBox {
                 if (Files.exists(file) & Files.isDirectory(file)) {
                     fileChooser.setInitialDirectory(file.toAbsolutePath().toFile());
                 }
-                fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("MUI 文件", "*.mui"));
+                fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Malody 皮肤", "*.mui", "*.msp", "info.asm"));
 
                 // 显示文件选择对话框
                 File selectedFile = fileChooser.showOpenDialog(null);
@@ -301,6 +304,22 @@ public class UISEditor extends HBox {
             SkinSnapshot.run(args);
             return;
         }
+        if (args.length > 0 && args[0].equals("--inspect-v")) {
+            try {
+                MspInspector.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            } catch (IOException error) {
+                throw new RuntimeException(error);
+            }
+            return;
+        }
+        if (args.length > 0 && args[0].equals("--audit-mui")) {
+            try {
+                MuiAudit.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            } catch (IOException error) {
+                throw new RuntimeException(error);
+            }
+            return;
+        }
         /*if (args.length == 1 & args[0].equals("DEBUG"))
             DEBUG = true;*/
         ZXLogger.info("===== > Malody Skin Studio < =====");
@@ -366,6 +385,19 @@ public class UISEditor extends HBox {
     }
 
     public void openFIle(Path path) {
+        String filename = path.getFileName().toString().toLowerCase();
+        if (filename.endsWith(".msp") || filename.equals("info.asm")) {
+            try {
+                VEditorPane editor = new VEditorPane(path);
+                Stage window = new Stage();
+                window.setScene(new Scene(editor, 1190, 760));
+                window.setTitle("Malody V · " + path.getFileName());
+                window.show();
+            } catch (IOException error) {
+                new Alert(Alert.AlertType.ERROR, "无法打开 V 皮肤: " + error.getMessage()).showAndWait();
+            }
+            return;
+        }
         Tab tab = new Tab();
         tab.setText(path.getFileName().toString());
         UISCodeArea uisCodeArea;

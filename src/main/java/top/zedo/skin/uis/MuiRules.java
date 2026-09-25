@@ -1,0 +1,16 @@
+package top.zedo.skin.uis;
+
+/** Numeric conventions used by the legacy MUI preview. */
+public final class MuiRules {
+    private MuiRules() { }
+
+    // @unit defaults to 720 in Emiria's UISPassNumber and in the sampled 4.3.7 skins.
+    public static final int DEFAULT_UNIT_HEIGHT = 720;
+    // The historical UIS width unit "w" uses Screen.width / 1280.
+    public static final int WIDTH_UNIT_BASE = 1280;
+    // The sampled 4.x skin corpus uses 0..100 for opacity; 5.0's prototype uses 0..255.
+    public static final int FULL_OPACITY = 100;
+    // Existing editor preview convention; 4.3.7 runtime equivalence still needs visual proof.
+    public static final int PERSPECTIVE_LAYER_FIRST = 1;
+    public static final int PERSPECTIVE_LAYER_END = 99;
+}
