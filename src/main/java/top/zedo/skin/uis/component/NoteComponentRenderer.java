@@ -3,7 +3,6 @@ package top.zedo.skin.uis.component;
 import javafx.geometry.Point2D;
 import javafx.geometry.Pos;
 import javafx.scene.image.Image;
-import javafx.scene.paint.Color;
 import javafx.scene.transform.Affine;
 import top.zedo.skin.basis.RenderRectangle;
 import top.zedo.skin.uis.ExpressionVector;
@@ -122,7 +121,6 @@ public class NoteComponentRenderer extends AbstractComponentRenderer {
 
 
             drawImage(tex3, rr.getLeft(), rr.getTop(), rr.getWidth(), rr.getHeight());
-            drawImage(tex3, rr);
 
         } else if (type == 3) {
 
@@ -163,16 +161,6 @@ public class NoteComponentRenderer extends AbstractComponentRenderer {
             drawImage(tex, rr.getLeft(), rr.getTop(), rr.getWidth(), rr.getHeight());
             gc.restore();
 
-
-            gc.setFill(Color.HOTPINK);
-            gc.fillRect(rr.getLeft() - 2, rr.getTop() - 2, 4, 4);
-
-
-            progressCalculation(rr, 1);
-            //rr.drawImageTest(gc, tex);
-            gc.fillRect(rr.getLeft() - 2, rr.getTop() - 2, 4, 4);
-
-            //gc.setGlobalAlpha(1);
         }
 
 

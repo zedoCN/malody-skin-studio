@@ -44,7 +44,7 @@ public class FrameAnimationComponentRenderer extends AbstractComponentRenderer {
     @Override
     void drawComponent( double width, double height,long time) {
         transform();
-        frame.update();
+        frame.update(time);
         drawImage( frame.getCurrentFrame());
     }
 }

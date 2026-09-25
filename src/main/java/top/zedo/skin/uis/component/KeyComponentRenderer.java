@@ -28,7 +28,7 @@ public class KeyComponentRenderer extends AbstractComponentRenderer {
 
 
         transform();
-        Image currImage = ((System.currentTimeMillis() + i * 100L) % 1000 > 500 ? tex2 : tex);
+        Image currImage = (Math.floorMod(time + i * 100L, 1000) > 500 ? tex2 : tex);
         drawImage(currImage);
         //rr.drawImage(gc, currImage);
     }

@@ -1,7 +1,6 @@
 package top.zedo.skin.uis.component;
 
 import javafx.scene.image.Image;
-import javafx.scene.paint.Color;
 import top.zedo.skin.uis.ExpressionVector;
 import top.zedo.skin.uis.UISComponent;
 import top.zedo.skin.uis.UISFrame;
@@ -104,8 +103,6 @@ public class ScoreComponentRenderer extends AbstractComponentRenderer {
                 }
                 //System.out.println("  " + x + "  " + y + "  " + cw + "  " + fsize.getW());
                 gc.drawImage(charFrame, x, y, cw, fsize.getW());
-                gc.setStroke(Color.GREEN);
-                gc.strokeRect(x, y, cw, fsize.getW());
 
                 // rr.drawImage(gc, charFrame);
                 // 调整下一个字符的绘制位置

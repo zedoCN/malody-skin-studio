@@ -13,7 +13,6 @@ public class UISFrame {
 
     double interval;
     int currentIndex;
-    long timer = System.currentTimeMillis();
     boolean loop = true;
 
     public UISFrame() {
@@ -38,19 +37,14 @@ public class UISFrame {
         currentIndex = index;
     }
 
-    public boolean update() {
-        if (frames == null) return false;
-        int time = (int) (System.currentTimeMillis() - timer);
-        if (time > interval) {
-            currentIndex++;
-            timer = System.currentTimeMillis();
-            if (currentIndex >= frames.size() && loop) {
-                currentIndex = 0;
-            }
-            return currentIndex == frames.size() - 1;
-
-        }
-        return false;
+    public boolean update(long time) {
+        if (frames == null || frames.isEmpty() || interval <= 0) return false;
+        int next = time < 0 ? 0 : (int) Math.min(Integer.MAX_VALUE, Math.floor(time / interval));
+        if (loop) next %= frames.size();
+        else next = Math.min(next, frames.size() - 1);
+        boolean changed = currentIndex != next;
+        currentIndex = next;
+        return changed && currentIndex == frames.size() - 1;
     }
 
     public Image getCurrentFrame() {

@@ -1,7 +1,6 @@
 package top.zedo.skin.uis.component;
 
 import javafx.geometry.Pos;
-import javafx.scene.paint.Color;
 import top.zedo.skin.basis.RenderRectangle;
 import top.zedo.skin.uis.ExpressionVector;
 import top.zedo.skin.uis.UISComponent;
@@ -50,11 +49,6 @@ public class BarComponentRender extends AbstractComponentRenderer {
         drawImage(tex, rr);
         progressCalculation(rr, progress - 1);
         drawImage(tex, rr);
-
-
-        gc.setFill(Color.HOTPINK);
-        gc.fillRect(rr.getLeft() - 2, rr.getTop() - 2, 4, 4);
-
 
     }
 
