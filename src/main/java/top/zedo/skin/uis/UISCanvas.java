@@ -12,7 +12,8 @@ import top.zedo.zxncore.ZXLogger;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.Map;
 
 public class UISCanvas extends LayerCanvasPane {
     //暂停状态
@@ -23,7 +24,7 @@ public class UISCanvas extends LayerCanvasPane {
     ExpressionCalculator expressionCalculator = new ExpressionCalculator();
     public MeasuringRulerRenderer measureRuler = new MeasuringRulerRenderer(expressionCalculator);
     ArrayList<AbstractComponentRenderer> componentRenders = new ArrayList<>();
-    HashMap<UISComponent, AbstractComponentRenderer> componentMap = new HashMap<>();
+    Map<UISComponent, AbstractComponentRenderer> componentMap = new IdentityHashMap<>();
     DeviceType deviceType;
     double aspectRatio = 1;
     double zoomRate = 1;

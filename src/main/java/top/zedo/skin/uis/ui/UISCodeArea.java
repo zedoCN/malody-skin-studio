@@ -1,5 +1,6 @@
 package top.zedo.skin.uis.ui;
 
+import javafx.animation.PauseTransition;
 import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -10,11 +11,9 @@ import javafx.scene.layout.HBox;
 import javafx.scene.paint.Color;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
-import org.fxmisc.richtext.model.PlainTextChange;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
 
-import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -22,14 +21,13 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.function.Consumer;
 import java.util.function.IntFunction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import top.zedo.zxncore.ZXLogger;
 
 public class UISCodeArea extends CodeArea {
     private static final Pattern PATTERN = CodePattern.getPattern();
@@ -55,9 +53,11 @@ public class UISCodeArea extends CodeArea {
         return hbox;
     };
     private final ExecutorService executor;
-    private final ExecutorService autoSaveExecutor = Executors.newSingleThreadExecutor();
+    private final PauseTransition autoSave = new PauseTransition(javafx.util.Duration.millis(200));
     private final Path file;
-    Runnable saved;
+    private final Runnable saved;
+    private boolean dirty;
+    private boolean disposed;
 
     {
 
@@ -77,26 +77,11 @@ public class UISCodeArea extends CodeArea {
             }
         }).subscribe(this::applyHighlighting);
 
-        multiPlainChanges().successionEnds(Duration.ofMillis(200)).retainLatestUntilLater(autoSaveExecutor).subscribe(new Consumer<>() {
-            @Override
-            public void accept(List<PlainTextChange> plainTextChanges) {
-                System.out.println("自动保存");
-                try (BufferedWriter writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-                    writer.write(getText());
-                    writer.flush();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-                saved.run();
-
-
-            }
+        autoSave.setOnFinished(_ -> save());
+        textProperty().addListener((observable, oldText, newText) -> {
+            dirty = true;
+            autoSave.playFromStart();
         });
-
-
-            /*textProperty().addListener((obs, oldText, newText) -> {
-                codeArea.setStyleSpans(0, computeHighlighting(newText));
-            });*/
     }
 
 
@@ -132,6 +117,25 @@ public class UISCodeArea extends CodeArea {
 
     public Path getFile() {
         return file;
+    }
+
+    public void dispose() {
+        if (disposed) return;
+        autoSave.stop();
+        save();
+        disposed = true;
+        executor.shutdownNow();
+    }
+
+    private void save() {
+        if (!dirty) return;
+        try {
+            Files.writeString(file, getText(), StandardCharsets.UTF_8);
+            dirty = false;
+            saved.run();
+        } catch (IOException error) {
+            ZXLogger.warning("保存 MUI 文件失败: " + file + " - " + error.getMessage());
+        }
     }
 
     private Task<StyleSpans<Collection<String>>> computeHighlightingAsync() {

@@ -37,7 +37,7 @@ public class UISComponent {
     /**
      * 资源映射表
      */
-    private final HashMap<String, Path> imageMap;
+    private final Map<String, Path> imageMap;
     /**
      * 属性索引
      */
@@ -78,7 +78,7 @@ public class UISComponent {
         return isAnimation;
     }
 
-    public UISComponent(String fullName, HashMap<String, Path> imageMap, UISSkin uisSkin) {
+    public UISComponent(String fullName, Map<String, Path> imageMap, UISSkin uisSkin) {
         this.imageMap = imageMap;
 
         this.fullName = fullName;
@@ -283,8 +283,8 @@ public class UISComponent {
             ZXLogger.warning(getFullName() + " 未找到资源 " + str);
             return UNKNOWN;
         }
-        try {
-            return new Image(Files.newInputStream(path));
+        try (InputStream stream = Files.newInputStream(path)) {
+            return new Image(stream);
         } catch (IOException e) {
             ZXLogger.warning(getFullName() + " 无法载入图片 " + path);
         }
@@ -405,15 +405,13 @@ public class UISComponent {
     }
 
 
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj) return true;
-        if (obj == null || getClass() != obj.getClass()) return false;
-        UISComponent otherComponent = (UISComponent) obj;
-        return index == otherComponent.index &&
-                Objects.equals(name, otherComponent.name) &&
-                Objects.equals(fullName, otherComponent.fullName) &&
-                properties.equals(otherComponent.properties) &&
-                animations.equals(otherComponent.animations);
+    boolean hasSameContent(UISComponent other) {
+        return other != null
+                && index == other.index
+                && Objects.equals(name, other.name)
+                && Objects.equals(fullName, other.fullName)
+                && properties.equals(other.properties)
+                && propertiesIndex.equals(other.propertiesIndex)
+                && animations.equals(other.animations);
     }
 }

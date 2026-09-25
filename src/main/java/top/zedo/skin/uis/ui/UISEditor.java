@@ -15,6 +15,7 @@ import top.zedo.skin.DeviceType;
 import top.zedo.skin.ResolutionInfo;
 import top.zedo.skin.SkinConfig;
 import top.zedo.skin.uis.UISCanvas;
+import top.zedo.skin.uis.SkinSnapshot;
 import top.zedo.zxncore.ZXLogger;
 import top.zedo.zxncore.ZXVersion;
 
@@ -296,6 +297,10 @@ public class UISEditor extends HBox {
     };*/
 
     public static void main(String[] args) {
+        if (args.length > 0 && args[0].equals("--snapshot")) {
+            SkinSnapshot.run(args);
+            return;
+        }
         /*if (args.length == 1 & args[0].equals("DEBUG"))
             DEBUG = true;*/
         ZXLogger.info("===== > Malody Skin Studio < =====");
@@ -340,6 +345,12 @@ public class UISEditor extends HBox {
                 }
             }
             stage.setOnCloseRequest(event -> {
+                for (Tab tab : uISEditor.tabPane.getTabs()) {
+                    if (tab.getContent() instanceof VirtualizedScrollPane<?> pane
+                            && pane.getContent() instanceof UISCodeArea codeArea) {
+                        codeArea.dispose();
+                    }
+                }
                 SkinConfig.save();
                 System.exit(0);
             });
@@ -357,7 +368,7 @@ public class UISEditor extends HBox {
     public void openFIle(Path path) {
         Tab tab = new Tab();
         tab.setText(path.getFileName().toString());
-        UISCodeArea uisCodeArea = null;
+        UISCodeArea uisCodeArea;
         try {
             uisCodeArea = new UISCodeArea(path, uisCanvas::updateSkin);
         } catch (IOException e) {
@@ -368,6 +379,7 @@ public class UISEditor extends HBox {
         VirtualizedScrollPane<UISCodeArea> vsPane = new VirtualizedScrollPane<>(uisCodeArea);
         VBox.setVgrow(vsPane, Priority.ALWAYS);
         tab.setContent(vsPane);
+        tab.setOnClosed(_ -> uisCodeArea.dispose());
         tabPane.getTabs().add(tab);
         tabPane.getSelectionModel().select(tab);
         //uisCanvas.loadSkin(path);
