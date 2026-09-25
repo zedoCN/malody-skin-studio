@@ -27,7 +27,7 @@ Windows 使用 `mvnw.cmd`。首次运行会下载 Maven 和 JavaFX 依赖。应�
 ./mvnw javafx:run '-Djavafx.args=--snapshot examples/基本.mui target/debug/basic-0.png 0 PC'
 ```
 
-最后两个参数可省略，默认是 `0` 毫秒和 `PC`。设备比例可填 `PC`、`PHONE`、`PHONE_LONG`、`IPAD` 等 `ResolutionInfo` 枚举名。截图写入指定 PNG 路径；解析和资源告警仍输出在终端及 `latest.log`。此入口只渲染一帧，不启动编辑器窗口。
+最后两个参数可省略，默认是 `0` 毫秒和 `PC`。设备比例可填 `PC`、`PHONE`、`PHONE_LONG`、`IPAD` 等 `ResolutionInfo` 枚举名；对照 Android 真机时可填 `ANDROID:2376x1152`，直接输出该像素尺寸。截图写入指定 PNG 路径；解析和资源告警仍输出在终端及 `latest.log`。此入口只渲染一帧，不启动编辑器窗口。
 
 批量检查 `.mui` 文件能否读取，以及查看 V 皮肤的元数据与组件：
 
@@ -58,5 +58,7 @@ Windows 使用 `mvnw.cmd`。首次运行会下载 Maven 和 JavaFX 依赖。应�
 Emiria 历史中找到的 UIS 解析器属于 5.0.0 原型，可用于核对 `@unit`、`w`、条件、定义与继承等规则；它不足以证明 4.3.7 的每处运行时行为。当前 `.mui` 预览保持原编辑器已接近游戏的画面作为基线。`UISPerspectiveTransform` 中的角度多项式来自本编辑器 2024 年的经验标定，未在 Emiria 原型中找到对应实现，现有测试固定了它的输出。4.x 样本中透明度常用 0–100，而 Emiria 5.0 原型按 0–255 处理，不能直接套用。
 
 4.3.7 APK 的内置 UIS 脚本及当前绘制差距见 [4.3.7 校准记录](docs/4.3.7-audit.md)。
+
+连接可运行 4.3.7 的 Android 设备后，可用 [skin437_probe.py](scripts/skin437_probe.py) 生成九宫格测试纹理、从一份 `.msz` 打包测试皮肤、推送到设备并保存带版本和皮肤选择信息的截图。操作步骤和已发现的脚本缓存行为写在校准记录中。
 
 V 的 `SkinFile` 结构取自 Emiria 当前源码，并用真实 `.msp` 样本验证了读取。V 编辑器目前是元数据和部分组件参数编辑器，尚未实现完整场景合成预览、所有组件类型的编辑或游戏内视觉一致性验证。

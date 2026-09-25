@@ -3,6 +3,7 @@ package top.zedo.skin.uis;
 import javafx.application.Platform;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.image.WritableImage;
+import top.zedo.skin.DeviceType;
 import top.zedo.skin.ResolutionInfo;
 import top.zedo.zxncore.ZXLogger;
 
@@ -19,12 +20,33 @@ public final class SkinSnapshot {
 
     public static void run(String[] args) {
         if (args.length < 3 || args.length > 5) {
-            throw new IllegalArgumentException("用法: --snapshot <皮肤.mui> <输出.png> [时间毫秒] [设备比例]");
+            throw new IllegalArgumentException("用法: --snapshot <皮肤.mui> <输出.png> [时间毫秒] [设备比例或 ANDROID:宽x高]");
         }
         Path skinPath = Path.of(args[1]);
         Path outputPath = Path.of(args[2]);
         long time = args.length >= 4 ? Long.parseLong(args[3]) : 0;
-        ResolutionInfo resolution = args.length == 5 ? ResolutionInfo.valueOf(args[4].toUpperCase()) : ResolutionInfo.PC;
+        String profile = args.length == 5 ? args[4].toUpperCase() : "PC";
+        DeviceType device;
+        double aspectRatio;
+        double outputHeight;
+        if (profile.startsWith("ANDROID:")) {
+            String[] dimensions = profile.substring("ANDROID:".length()).split("X", -1);
+            if (dimensions.length != 2) throw new IllegalArgumentException("设备尺寸应为 ANDROID:宽x高");
+            double deviceWidth = Double.parseDouble(dimensions[0]);
+            double deviceHeight = Double.parseDouble(dimensions[1]);
+            if (!Double.isFinite(deviceWidth) || !Double.isFinite(deviceHeight)
+                    || deviceWidth <= 0 || deviceHeight <= 0) {
+                throw new IllegalArgumentException("设备宽高必须是正数");
+            }
+            device = DeviceType.ANDROID;
+            aspectRatio = deviceWidth / deviceHeight;
+            outputHeight = deviceHeight;
+        } else {
+            ResolutionInfo resolution = ResolutionInfo.valueOf(profile);
+            device = resolution.getDevice();
+            aspectRatio = resolution.getAspectRatio();
+            outputHeight = 0;
+        }
         if (!Files.isRegularFile(skinPath)) {
             throw new IllegalArgumentException("找不到皮肤文件: " + skinPath);
         }
@@ -33,9 +55,10 @@ public final class SkinSnapshot {
         Platform.startup(() -> {
             try {
                 UISCanvas canvas = new UISCanvas();
-                canvas.setDeviceType(resolution.getDevice());
-                canvas.setAspectRatio(resolution.getAspectRatio());
+                canvas.setDeviceType(device);
+                canvas.setAspectRatio(aspectRatio);
                 canvas.loadSkin(skinPath);
+                if (outputHeight > 0) canvas.setZoomRate(outputHeight / canvas.skin.unit);
                 if (canvas.skin.getComponents().isEmpty()) {
                     throw new IllegalStateException("皮肤没有可渲染的组件: " + skinPath);
                 }
@@ -56,7 +79,7 @@ public final class SkinSnapshot {
         try {
             writePng(frame.join(), outputPath);
             ZXLogger.info("已保存截图: " + outputPath.toAbsolutePath()
-                    + " (" + resolution.name() + ", " + time + " ms)");
+                    + " (" + profile + ", " + time + " ms)");
         } finally {
             Platform.exit();
         }

@@ -144,6 +144,7 @@ public abstract class AbstractComponentRenderer implements RenderInterface {
                 case 2 -> new RectangleComponentRenderer(component);
                 case 3 -> new FrameAnimationComponentRenderer(component);
                 case 4 -> new Scale3ComponentRender(component);
+                case 5 -> new Scale9ComponentRenderer(component);
                 default -> null;
             };
 

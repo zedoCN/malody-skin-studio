@@ -1,0 +1,8 @@
+_codex-scale9
+    type=5
+    tex=panel.png
+    rect=10px,10px,10px,10px
+    size=90,90
+    pos=50%,25%
+    anchor=4
+    zindex=500

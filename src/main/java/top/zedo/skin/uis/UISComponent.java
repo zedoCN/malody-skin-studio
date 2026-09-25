@@ -375,6 +375,20 @@ public class UISComponent {
         }
         return new ExpressionVector(expressionCalculator, value, propertiesIndex.getOrDefault(name, 0));
     }
+
+    /** A UIS rect is x, y, width, height; its axes use the same units as pos/size. */
+    public double[] getRectangle(String name) {
+        String value = getString(name, null);
+        if (value == null) return null;
+        String[] parts = value.split(",", -1);
+        if (parts.length != 4) throw new IllegalArgumentException("无效的 UIS 矩形: " + value);
+        return new double[]{
+                expressionCalculator.calculateX(parts[0].trim()),
+                expressionCalculator.calculateY(parts[1].trim()),
+                expressionCalculator.calculateX(parts[2].trim()),
+                expressionCalculator.calculateY(parts[3].trim())
+        };
+    }
     /**
      * 获取表达式向量
      *
