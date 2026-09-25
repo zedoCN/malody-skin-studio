@@ -1,0 +1,6 @@
+/target/
+/config.json
+/latest.log*
+/.idea/
+*.iml
+.DS_Store
