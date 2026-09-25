@@ -16,7 +16,7 @@ class MuiSkinLoaderTest {
     @Test
     void loadsIncludesComponentsAndImageIndex() throws IOException {
         Path root = directory.resolve("skin.mui");
-        Files.writeString(root, "@unit 900\n@angle 15\n@define caption Hello world\n@include extra.mui\n_sprite-[1-2]\n  type=0\n  tex=cover.png\n");
+        Files.writeString(root, "@unit 900\n@apply 3d\n@angle 15\n@define caption Hello world\n@include extra.mui\n_sprite-[1-2]\n  type=0\n  tex=cover.png\n");
         Files.writeString(directory.resolve("extra.mui"), "note\n  pos=10,20\n");
         Files.write(directory.resolve("cover.png"), new byte[0]);
         Files.createDirectory(directory.resolve("cache"));
@@ -34,6 +34,20 @@ class MuiSkinLoaderTest {
         assertTrue(result.components().containsKey("_sprite-2"));
         assertEquals(directory.resolve("cover.png").toRealPath(), images.get("cover.png"));
         assertEquals(directory.resolve("cache/frame.png").toRealPath(), images.get("frame.png"));
+    }
+
+    @Test
+    void appliesPerspectiveOnlyWhenEnabledAndUsesGameDefaultForZeroAngle() throws IOException {
+        Path root = directory.resolve("perspective.mui");
+        UISSkin skin = new UISSkin(root, new ExpressionCalculator());
+        Files.writeString(root, "@angle 40\n");
+        assertEquals(0, new MuiSkinLoader(skin, new HashMap<>()).load(root).angle());
+        Files.writeString(root, "@apply 3d\n@angle 0\n");
+        assertEquals(30, new MuiSkinLoader(skin, new HashMap<>()).load(root).angle());
+        Files.writeString(root, "@apply 3d\n");
+        assertEquals(30, new MuiSkinLoader(skin, new HashMap<>()).load(root).angle());
+        Files.writeString(root, "@apply 3d\n@angle 40\n");
+        assertEquals(40, new MuiSkinLoader(skin, new HashMap<>()).load(root).angle());
     }
 
     @Test

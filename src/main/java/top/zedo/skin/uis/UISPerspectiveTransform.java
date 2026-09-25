@@ -7,7 +7,8 @@ import top.zedo.zxncore.ZXLogger;
 public class UISPerspectiveTransform {
     // Empirical calibration from this editor's 2024 renderer (ab372008), not a MUI format rule.
     // Emiria's UIS prototype records @angle but does not provide a matching 4.3.7 projection.
-    // Keep these coefficients until game output or reference frames can justify a new fit.
+    // Device marker checks at @angle 1, 28, and 40 differed by at most 2 horizontal pixels
+    // at 2376x1152. These remain an empirical fit, not the game's recovered formula.
     private static final double ANGLE_QUADRATIC = 3.7832580504765276e-05;
     private static final double ANGLE_LINEAR = -0.0041608166982776305;
     private static final double ANGLE_CONSTANT = 0.558138532712179;

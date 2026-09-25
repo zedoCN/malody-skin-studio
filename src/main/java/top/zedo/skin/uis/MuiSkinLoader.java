@@ -28,6 +28,7 @@ final class MuiSkinLoader {
     private final Set<Path> activeIncludes = new HashSet<>();
     private final HashMap<String, UISComponent> components = new HashMap<>();
     private int angle;
+    private boolean apply3d;
     private int unit = MuiRules.DEFAULT_UNIT_HEIGHT;
 
     MuiSkinLoader(UISSkin skin, Map<String, Path> imagePaths) {
@@ -41,7 +42,9 @@ final class MuiSkinLoader {
         } catch (RuntimeException error) {
             throw new IOException("解析 MUI 文件失败: " + path, error);
         }
-        return new Result(components, angle, unit);
+        // On the 4.3.7 device, @apply 3d with @angle 0 renders like 30 degrees;
+        // @angle 40 without @apply 3d leaves the same markers unprojected.
+        return new Result(components, apply3d ? (angle == 0 ? MuiRules.DEFAULT_3D_ANGLE : angle) : 0, unit);
     }
 
     private void parse(Path path) throws IOException {
@@ -145,6 +148,9 @@ final class MuiSkinLoader {
                 }
             }
             case "@angle" -> angle = Integer.parseInt(args[1]);
+            case "@apply" -> {
+                if (args[1].equalsIgnoreCase("3d")) apply3d = true;
+            }
             case "@unit" -> unit = Integer.parseInt(args[1]);
             case "@define" -> {
                 if (args.length == 3) skin.variable.put(args[1], args[2]);
