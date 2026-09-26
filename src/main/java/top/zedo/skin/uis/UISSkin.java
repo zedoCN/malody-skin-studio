@@ -127,7 +127,7 @@ public class UISSkin {
     /**
      * 更新渲染器
      */
-    public boolean updateRenderer(List<AbstractComponentRenderer> renderers, Map<UISComponent, AbstractComponentRenderer> currentComponentMap, LayerCanvasPane layerCanvasPane) {
+    public boolean updateRenderer(List<AbstractComponentRenderer> renderers, Map<UISComponent, AbstractComponentRenderer> currentComponentMap, LayerCanvasPane layerCanvasPane) throws IOException {
         boolean isChanged = false;
         MuiSkinLoader.Result loaded;
         HashMap<String, String> previousVariables = new HashMap<>(variable);
@@ -145,8 +145,7 @@ public class UISSkin {
             variable.putAll(previousVariables);
             imagePathMap.clear();
             imagePathMap.putAll(previousImages);
-            ZXLogger.warning("解析mui文件失败: " + e.getMessage());
-            return isChanged;
+            throw e;
         }
         HashMap<String, UISComponent> newComponentMap = loaded.components();
         expressionCalculator.setAngle(angle);
@@ -169,20 +168,24 @@ public class UISSkin {
                 isChanged = true;
         }
 
-        //检查新组件
+        // A custom component's type selects its renderer class at construction.
+        // Replacing only its properties would leave the old class drawing the new type.
         for (UISComponent component : newComponentMap.values()) {
-            if (!componentMap.containsKey(component.getFullName())) {
-                AbstractComponentRenderer renderer = AbstractComponentRenderer.toRenderer(component, layerCanvasPane);
-                if (renderer == null) {
-                    ZXLogger.warning("不支持的组件: " + component.getFullName() + "   " + component);
-                    continue;
-                }
-                renderers.add(renderer);
-                currentComponentMap.put(component, renderer);
-                componentMap.put(component.getFullName(), component);
-                if (component.isAnimation())
-                    isChanged = true;
+            UISComponent previous = componentMap.get(component.getFullName());
+            if (previous != null && !rendererKindChanged(previous, component)) continue;
+            if (previous != null) {
+                renderers.remove(currentComponentMap.remove(previous));
+                componentMap.remove(previous.getFullName());
             }
+            AbstractComponentRenderer renderer = AbstractComponentRenderer.toRenderer(component, layerCanvasPane);
+            if (renderer == null) {
+                ZXLogger.warning("不支持的组件: " + component.getFullName() + "   " + component);
+                continue;
+            }
+            renderers.add(renderer);
+            currentComponentMap.put(component, renderer);
+            componentMap.put(component.getFullName(), component);
+            if (component.isAnimation()) isChanged = true;
         }
 
         //更新其余组件属性
@@ -196,6 +199,11 @@ public class UISSkin {
         }
 
         return isChanged;
+    }
+
+    private static boolean rendererKindChanged(UISComponent previous, UISComponent current) {
+        return previous.getName().startsWith("_")
+                && previous.getInt("type", 0) != current.getInt("type", 0);
     }
 
     private void resetVariables() {

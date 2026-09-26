@@ -110,6 +110,49 @@ public final class MuiDocument {
         return new MuiDocument(source, changed);
     }
 
+    /** Replace one exact source property, rejecting edits after its line has changed. */
+    public MuiDocument replacePropertyAtLine(int lineNumber, String name, String expectedValue, String value) {
+        Objects.requireNonNull(name, "name");
+        Objects.requireNonNull(expectedValue, "expectedValue");
+        Objects.requireNonNull(value, "value");
+        if (value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0) {
+            throw new IllegalArgumentException("MUI 属性值不能包含换行");
+        }
+        if (lineNumber < 1 || lineNumber > lines.size()) {
+            throw new IllegalStateException("MUI 源属性行已变动: " + lineNumber);
+        }
+        Line line = lines.get(lineNumber - 1);
+        Property property = parseProperty(line.body);
+        if (property == null || !property.name.equals(name)
+                || !line.body.substring(property.valueStart, property.valueEnd).equals(expectedValue)) {
+            throw new IllegalStateException("MUI 源属性行已变动: " + lineNumber);
+        }
+        String updated = line.body.substring(0, property.valueStart) + value
+                + line.body.substring(property.valueEnd);
+        List<Line> changed = new ArrayList<>(lines);
+        changed.set(lineNumber - 1, new Line(updated, line.ending));
+        return new MuiDocument(source, changed);
+    }
+
+    /** Guard both the literal section and the property before editing an effective component. */
+    public MuiDocument replacePropertyAt(MuiSourceLocation source, String expectedHeader,
+                                         String name, String expectedValue, String value) {
+        Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(expectedHeader, "expectedHeader");
+        int sectionIndex = source.sectionLine() - 1;
+        int propertyIndex = source.propertyLine() - 1;
+        if (source.grouped() || sectionIndex < 0 || propertyIndex <= sectionIndex
+                || propertyIndex >= lines.size() || !lines.get(sectionIndex).body.trim().equals(expectedHeader)) {
+            throw new IllegalStateException("MUI 组件段已变动: " + source.file() + ":" + source.sectionLine());
+        }
+        for (int i = sectionIndex + 1; i < propertyIndex; i++) {
+            if (isHeader(lines.get(i).body)) {
+                throw new IllegalStateException("MUI 属性已移动到其他组件段: " + source.file() + ":" + source.propertyLine());
+            }
+        }
+        return replacePropertyAtLine(source.propertyLine(), name, expectedValue, value);
+    }
+
     public void save(Path path) throws IOException {
         source.write(path, text());
     }

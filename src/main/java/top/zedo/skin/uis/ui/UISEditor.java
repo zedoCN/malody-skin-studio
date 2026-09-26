@@ -4,11 +4,14 @@ import javafx.application.Platform;
 import javafx.animation.AnimationTimer;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.geometry.Point2D;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.input.KeyCombination;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import org.fxmisc.flowless.VirtualizedScrollPane;
@@ -17,7 +20,10 @@ import top.zedo.skin.ResolutionInfo;
 import top.zedo.skin.SkinConfig;
 import top.zedo.skin.uis.UISCanvas;
 import top.zedo.skin.uis.SkinSnapshot;
+import top.zedo.skin.uis.SkinTrace;
 import top.zedo.skin.uis.MuiAudit;
+import top.zedo.skin.uis.MuiPositionEditor;
+import top.zedo.skin.uis.component.ImageComponentRenderer;
 import top.zedo.skin.v.MspInspector;
 import top.zedo.skin.v.VEditorPane;
 import top.zedo.zxncore.ZXLogger;
@@ -31,6 +37,9 @@ import java.nio.file.Path;
 public class UISEditor extends HBox {
 
     public static final ZXVersion VERSION = new ZXVersion(1, 1, 0, ZXVersion.ReleaseStatus.BETA);
+    private DragSession dragSession;
+    private boolean previewValid = true;
+    Label previewStatus = new Label();
     UISCanvas uisCanvas = new UISCanvas() {
         {
             setBorder(new Border(new BorderStroke(Color.WHITE, BorderStrokeStyle.SOLID, CornerRadii.EMPTY, new BorderWidths(1), new Insets(0))));
@@ -41,8 +50,15 @@ public class UISEditor extends HBox {
             getSelectionModel().selectedItemProperty().addListener((observable, oldValue, newValue) -> {
                 if (newValue != null)
                     if (newValue.getContent() instanceof VirtualizedScrollPane code) {
-                        if (code.getContent() instanceof UISCodeArea codeArea)
-                            uisCanvas.loadSkin(codeArea.getFile());
+                        if (code.getContent() instanceof UISCodeArea codeArea) {
+                            try {
+                                uisCanvas.loadSkin(codeArea.getFile());
+                                previewValid = true;
+                                previewStatus.setText("");
+                            } catch (IOException error) {
+                                showPreviewError(error, false);
+                            }
+                        }
                     }
             });
             VBox.setVgrow(this, Priority.ALWAYS);
@@ -93,7 +109,13 @@ public class UISEditor extends HBox {
             getItems().addAll(DeviceType.values());
             setPrefWidth(60);
             getSelectionModel().selectedItemProperty().addListener((observable, oldValue, newValue) -> {
-                uisCanvas.setDeviceType(newValue);
+                try {
+                    uisCanvas.setDeviceType(newValue);
+                    previewValid = true;
+                    previewStatus.setText("");
+                } catch (IOException error) {
+                    showPreviewError(error, false);
+                }
             });
             //getSelectionModel().selectLast();
         }
@@ -107,7 +129,13 @@ public class UISEditor extends HBox {
             setPrefWidth(100);
             getSelectionModel().selectedItemProperty().addListener((observable, oldValue, newValue) -> {
                 deviceTypeChoiceBox.setValue(newValue.getDevice());
-                uisCanvas.setAspectRatio(newValue.getAspectRatio());
+                try {
+                    uisCanvas.setAspectRatio(newValue.getAspectRatio());
+                    previewValid = true;
+                    previewStatus.setText("");
+                } catch (IOException error) {
+                    showPreviewError(error, false);
+                }
             });
             getSelectionModel().selectLast();
         }
@@ -153,7 +181,13 @@ public class UISEditor extends HBox {
             valueProperty().addListener((observable, oldValue, newValue) -> {
                 if (!isValueChanging()) {
                     scalingFactorLabel.setText("缩放: " + (int) (newValue.doubleValue() * 100) + "%");
-                    uisCanvas.setZoomRate(newValue.doubleValue());
+                    try {
+                        uisCanvas.setZoomRate(newValue.doubleValue());
+                        previewValid = true;
+                        previewStatus.setText("");
+                    } catch (IOException error) {
+                        showPreviewError(error, false);
+                    }
                 }
             });
         }
@@ -161,7 +195,7 @@ public class UISEditor extends HBox {
     /**
      * 顶部工具栏
      */
-    HBox topToolbar = new HBox(resolutionChoiceBox, deviceTypeChoiceBox, unitChoiceBox, scalingFactorLabel, scalingFactorSlider, openFileButton, saveFileButton) {
+    HBox topToolbar = new HBox(resolutionChoiceBox, deviceTypeChoiceBox, unitChoiceBox, scalingFactorLabel, scalingFactorSlider, openFileButton, saveFileButton, previewStatus) {
         {
             setMinHeight(40);
             setBorder(new Border(new BorderStroke(Color.WHITE, BorderStrokeStyle.SOLID, CornerRadii.EMPTY, new BorderWidths(0, 0, 1, 0), new Insets(0))));
@@ -244,6 +278,9 @@ public class UISEditor extends HBox {
 
 
         setAlignment(Pos.CENTER_LEFT);
+        uisCanvas.addEventFilter(MouseEvent.MOUSE_PRESSED, this::beginPositionDrag);
+        uisCanvas.addEventFilter(MouseEvent.MOUSE_DRAGGED, this::previewPositionDrag);
+        uisCanvas.addEventFilter(MouseEvent.MOUSE_RELEASED, this::finishPositionDrag);
 
 
         uisCanvas.minWidthProperty().addListener((observable, oldValue, newValue) -> {
@@ -308,6 +345,10 @@ public class UISEditor extends HBox {
     public static void main(String[] args) {
         if (args.length > 0 && args[0].equals("--snapshot")) {
             SkinSnapshot.run(args);
+            return;
+        }
+        if (args.length > 0 && args[0].equals("--trace-mui")) {
+            SkinTrace.run(args);
             return;
         }
         if (args.length > 0 && args[0].equals("--inspect-v")) {
@@ -431,7 +472,7 @@ public class UISEditor extends HBox {
         tab.setText(path.getFileName().toString());
         UISCodeArea uisCodeArea;
         try {
-            uisCodeArea = new UISCodeArea(path, uisCanvas::updateSkin);
+            uisCodeArea = new UISCodeArea(path, () -> refreshPreview(true));
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -461,6 +502,107 @@ public class UISEditor extends HBox {
             codeArea.saveNow();
         } catch (IOException error) {
             showSaveError(codeArea, error);
+        }
+    }
+
+    private void refreshPreview(boolean saved) {
+        try {
+            uisCanvas.updateSkin();
+            previewValid = true;
+            previewStatus.setText(saved ? "已保存" : "");
+            previewStatus.setTooltip(null);
+        } catch (IOException error) {
+            showPreviewError(error, saved);
+        }
+    }
+
+    private void showPreviewError(IOException error, boolean saved) {
+        previewValid = false;
+        previewStatus.setText(saved ? "已保存，预览失败" : "预览失败");
+        previewStatus.setTooltip(new Tooltip(error.getMessage()));
+        ZXLogger.warning("预览 MUI 失败: " + error.getMessage());
+    }
+
+    private void beginPositionDrag(MouseEvent event) {
+        if (event.getButton() != MouseButton.PRIMARY) return;
+        try {
+            for (Tab tab : tabPane.getTabs()) {
+                UISCodeArea area = codeArea(tab);
+                if (area != null) area.saveNow();
+            }
+        } catch (IOException error) {
+            previewStatus.setText("保存失败，无法拖拽");
+            previewStatus.setTooltip(new Tooltip(error.getMessage()));
+            return;
+        }
+        if (!previewValid) return;
+        Point2D point = uisCanvas.sceneToLocal(event.getSceneX(), event.getSceneY());
+        ImageComponentRenderer image = uisCanvas.pickEditableImage(point.getX(), point.getY());
+        if (image == null) return;
+        dragSession = new DragSession(image, point.getX(), point.getY(),
+                image.pos.getX(), image.pos.getY());
+        previewStatus.setText("拖动 " + image.getComponent().getFullName());
+        event.consume();
+    }
+
+    private void previewPositionDrag(MouseEvent event) {
+        if (dragSession == null) return;
+        Point2D point = uisCanvas.sceneToLocal(event.getSceneX(), event.getSceneY());
+        dragSession.image().pos.setX(dragSession.originalX() + point.getX() - dragSession.mouseX());
+        dragSession.image().pos.setY(dragSession.originalY() + point.getY() - dragSession.mouseY());
+        event.consume();
+    }
+
+    private void finishPositionDrag(MouseEvent event) {
+        DragSession session = dragSession;
+        if (session == null) return;
+        dragSession = null;
+        event.consume();
+        Point2D point = uisCanvas.sceneToLocal(event.getSceneX(), event.getSceneY());
+        double dx = point.getX() - session.mouseX();
+        double dy = point.getY() - session.mouseY();
+        if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) {
+            session.restore();
+            previewStatus.setText("");
+            return;
+        }
+        try {
+            MuiPositionEditor.Edit edit = MuiPositionEditor.prepare(session.image().getComponent(), dx, dy);
+            UISCodeArea open = findOpenCodeArea(edit.file());
+            if (open == null) {
+                edit.save();
+                refreshPreview(true);
+            } else {
+                open.replaceText(edit.document().text());
+                open.saveNow();
+            }
+        } catch (IOException | IllegalArgumentException | IllegalStateException error) {
+            session.restore();
+            previewStatus.setText("拖拽未保存");
+            previewStatus.setTooltip(new Tooltip(error.getMessage()));
+            ZXLogger.warning("拖拽 MUI 组件失败: " + error.getMessage());
+        }
+    }
+
+    private UISCodeArea findOpenCodeArea(Path file) throws IOException {
+        for (Tab tab : tabPane.getTabs()) {
+            UISCodeArea area = codeArea(tab);
+            if (area != null && area.getFile().toRealPath().equals(file.toRealPath())) return area;
+        }
+        return null;
+    }
+
+    private static UISCodeArea codeArea(Tab tab) {
+        if (tab.getContent() instanceof VirtualizedScrollPane<?> pane
+                && pane.getContent() instanceof UISCodeArea area) return area;
+        return null;
+    }
+
+    private record DragSession(ImageComponentRenderer image, double mouseX, double mouseY,
+                               double originalX, double originalY) {
+        private void restore() {
+            image.pos.setX(originalX);
+            image.pos.setY(originalY);
         }
     }
 

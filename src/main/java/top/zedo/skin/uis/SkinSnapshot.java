@@ -3,8 +3,6 @@ package top.zedo.skin.uis;
 import javafx.application.Platform;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.image.WritableImage;
-import top.zedo.skin.DeviceType;
-import top.zedo.skin.ResolutionInfo;
 import top.zedo.zxncore.ZXLogger;
 
 import javax.imageio.ImageIO;
@@ -26,27 +24,7 @@ public final class SkinSnapshot {
         Path outputPath = Path.of(args[2]);
         long time = args.length >= 4 ? Long.parseLong(args[3]) : 0;
         String profile = args.length == 5 ? args[4].toUpperCase() : "PC";
-        DeviceType device;
-        double aspectRatio;
-        double outputHeight;
-        if (profile.startsWith("ANDROID:")) {
-            String[] dimensions = profile.substring("ANDROID:".length()).split("X", -1);
-            if (dimensions.length != 2) throw new IllegalArgumentException("设备尺寸应为 ANDROID:宽x高");
-            double deviceWidth = Double.parseDouble(dimensions[0]);
-            double deviceHeight = Double.parseDouble(dimensions[1]);
-            if (!Double.isFinite(deviceWidth) || !Double.isFinite(deviceHeight)
-                    || deviceWidth <= 0 || deviceHeight <= 0) {
-                throw new IllegalArgumentException("设备宽高必须是正数");
-            }
-            device = DeviceType.ANDROID;
-            aspectRatio = deviceWidth / deviceHeight;
-            outputHeight = deviceHeight;
-        } else {
-            ResolutionInfo resolution = ResolutionInfo.valueOf(profile);
-            device = resolution.getDevice();
-            aspectRatio = resolution.getAspectRatio();
-            outputHeight = 0;
-        }
+        SkinRenderProfile renderProfile = SkinRenderProfile.parse(profile);
         if (!Files.isRegularFile(skinPath)) {
             throw new IllegalArgumentException("找不到皮肤文件: " + skinPath);
         }
@@ -55,10 +33,9 @@ public final class SkinSnapshot {
         Platform.startup(() -> {
             try {
                 UISCanvas canvas = new UISCanvas();
-                canvas.setDeviceType(device);
-                canvas.setAspectRatio(aspectRatio);
+                renderProfile.apply(canvas);
                 canvas.loadSkin(skinPath);
-                if (outputHeight > 0) canvas.setZoomRate(outputHeight / canvas.skin.unit);
+                renderProfile.applyOutputHeight(canvas);
                 if (canvas.skin.getComponents().isEmpty()) {
                     throw new IllegalStateException("皮肤没有可渲染的组件: " + skinPath);
                 }

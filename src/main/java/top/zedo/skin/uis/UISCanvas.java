@@ -6,11 +6,13 @@ import javafx.scene.canvas.GraphicsContext;
 import top.zedo.skin.DeviceType;
 import top.zedo.skin.uis.component.AbstractComponentRenderer;
 import top.zedo.skin.uis.component.AnimationComponentRenderer;
+import top.zedo.skin.uis.component.ImageComponentRenderer;
 import top.zedo.skin.uis.component.MeasuringRulerRenderer;
 import top.zedo.ui.component.LayerCanvasPane;
 import top.zedo.zxncore.ZXLogger;
 
 import java.nio.file.Path;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.Map;
@@ -88,6 +90,16 @@ public class UISCanvas extends LayerCanvasPane {
         gc3d.restore();*/
     }
 
+    public ImageComponentRenderer pickEditableImage(double x, double y) {
+        for (int i = componentRenders.size() - 1; i >= 0; i--) {
+            AbstractComponentRenderer renderer = componentRenders.get(i);
+            if (renderer instanceof ImageComponentRenderer image && image.hitTestForPositionEdit(x, y)) {
+                return image;
+            }
+        }
+        return null;
+    }
+
     public void play() {
         if (isPaused) {
             isPaused = false;
@@ -110,7 +122,7 @@ public class UISCanvas extends LayerCanvasPane {
         }
     }
 
-    public void updateSkin() {
+    public void updateSkin() throws IOException {
         ZXLogger.info("更新皮肤");
         if (skin == null)
             return;
@@ -155,14 +167,14 @@ public class UISCanvas extends LayerCanvasPane {
         expressionCalculator.setUnitCanvasHeight(unitHeight);
     }
 
-    public void setDeviceType(DeviceType deviceType) {
+    public void setDeviceType(DeviceType deviceType) throws IOException {
         ZXLogger.info("设置设备类型: " + deviceType);
         if (this.deviceType == deviceType) return;
         this.deviceType = deviceType;
         if (skin != null) updateSkin();
     }
 
-    public void loadSkin(Path uisPath) {
+    public void loadSkin(Path uisPath) throws IOException {
         ZXLogger.info("加载皮肤: " + uisPath);
         componentRenders.clear();
         componentMap.clear();
@@ -190,7 +202,7 @@ public class UISCanvas extends LayerCanvasPane {
      *
      * @param aspectRatio 纵横比
      */
-    public void setAspectRatio(double aspectRatio) {
+    public void setAspectRatio(double aspectRatio) throws IOException {
         ZXLogger.info("设置纵横比: " + aspectRatio);
         this.aspectRatio = aspectRatio;
         updateSkin();
@@ -201,7 +213,7 @@ public class UISCanvas extends LayerCanvasPane {
      *
      * @param zoomRate 缩放率
      */
-    public void setZoomRate(double zoomRate) {
+    public void setZoomRate(double zoomRate) throws IOException {
         ZXLogger.info("设置缩放率: " + zoomRate);
         this.zoomRate = zoomRate;
         //expressionCalculator.setUnitCanvasHeight(skin.unit * zoomRate);

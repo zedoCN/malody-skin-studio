@@ -37,6 +37,27 @@ class MuiSkinLoaderTest {
     }
 
     @Test
+    void recordsEffectivePropertySourceAcrossIncludesAndRepeatedSections() throws IOException {
+        Path root = directory.resolve("skin.mui");
+        Path included = directory.resolve("extra.mui");
+        Files.writeString(included, "_included\n  pos=1,2\n_item\n  pos=3,4\n");
+        Files.writeString(root, "@include extra.mui\n_item\n  pos=5,6\n_item\n  size=7,8\n_group-[1-2]\n  pos=9,10\n");
+        UISSkin skin = new UISSkin(root, new ExpressionCalculator(1280, 720, 720));
+
+        var components = new MuiSkinLoader(skin, new HashMap<>()).load(root).components();
+
+        assertEquals(new MuiSourceLocation(included.toRealPath(), 1, 2, false),
+                components.get("_included").getPropertySource("pos"));
+        assertEquals(new MuiSourceLocation(root.toRealPath(), 2, 3, false),
+                components.get("_item").getPropertySource("pos"));
+        assertEquals(new MuiSourceLocation(root.toRealPath(), 4, 5, false),
+                components.get("_item").getPropertySource("size"));
+        assertEquals(new MuiSourceLocation(root.toRealPath(), 6, 7, true),
+                components.get("_group-1").getPropertySource("pos"));
+        assertEquals("5,6", components.get("_item").getRawProperty("pos"));
+    }
+
+    @Test
     void appliesPerspectiveOnlyWhenEnabledAndUsesGameDefaultForZeroAngle() throws IOException {
         Path root = directory.resolve("perspective.mui");
         UISSkin skin = new UISSkin(root, new ExpressionCalculator());

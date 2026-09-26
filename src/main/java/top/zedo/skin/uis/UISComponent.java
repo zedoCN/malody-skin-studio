@@ -46,6 +46,7 @@ public class UISComponent {
     private String name;
     private final String fullName;
     private final HashMap<String, String> properties = new HashMap<>();
+    private final HashMap<String, MuiSourceLocation> propertySources = new HashMap<>();
     private final Set<String> animations = new HashSet<>();
     private int index = 0;
     private boolean changed = false;
@@ -69,9 +70,11 @@ public class UISComponent {
         properties.clear();
         animations.clear();
         propertiesIndex.clear();
+        propertySources.clear();
         properties.putAll(component.properties);
         animations.addAll(component.animations);
         propertiesIndex.putAll(component.propertiesIndex);
+        propertySources.putAll(component.propertySources);
         changed = true;
     }
 
@@ -124,9 +127,23 @@ public class UISComponent {
      * @param value 属性值 如果是null为移除属性
      */
     public void putProperty(String name, String value, int index) {
+        putProperty(name, value, index, null);
+    }
+
+    public void putProperty(String name, String value, int index, MuiSourceLocation source) {
         properties.put(name, value.trim());
         propertiesIndex.put(name, index);
+        if (source == null) propertySources.remove(name);
+        else propertySources.put(name, source);
         changed = true;
+    }
+
+    public MuiSourceLocation getPropertySource(String name) {
+        return propertySources.get(name);
+    }
+
+    public String getRawProperty(String name) {
+        return properties.get(name);
     }
 
     public void putAnimation(String value) {
@@ -246,6 +263,19 @@ public class UISComponent {
         try {
             return ExpressionCalculator.calculateScalar(getString(name, ""));
         } catch (IllegalArgumentException e) {
+            return defaultValue;
+        }
+    }
+
+    /** Legacy text fsize uses the vertical size expression, then truncates to an integer. */
+    public int getVerticalLength(String name, int defaultValue) {
+        String value = getString(name, null);
+        if (value == null) return defaultValue;
+        try {
+            double pixels = expressionCalculator.calculateY(value);
+            return Double.isFinite(pixels) && pixels >= Integer.MIN_VALUE && pixels <= Integer.MAX_VALUE
+                    ? (int) pixels : defaultValue;
+        } catch (IllegalArgumentException error) {
             return defaultValue;
         }
     }
@@ -376,6 +406,12 @@ public class UISComponent {
         return new ExpressionVector(expressionCalculator, value, propertiesIndex.getOrDefault(name, 0));
     }
 
+    public boolean hasPositionParent() {
+        String value = getString("pos", "");
+        int separator = value.indexOf(' ');
+        return separator > 0 && uisSkin.getComponent(value.substring(0, separator)) != null;
+    }
+
     /** A UIS rect is x, y, width, height; its axes use the same units as pos/size. */
     public double[] getRectangle(String name) {
         String value = getString(name, null);
@@ -444,6 +480,7 @@ public class UISComponent {
                 && Objects.equals(fullName, other.fullName)
                 && properties.equals(other.properties)
                 && propertiesIndex.equals(other.propertiesIndex)
+                && propertySources.equals(other.propertySources)
                 && animations.equals(other.animations);
     }
 }

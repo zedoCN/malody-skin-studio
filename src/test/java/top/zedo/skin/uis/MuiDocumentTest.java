@@ -55,6 +55,21 @@ class MuiDocumentTest {
     }
 
     @Test
+    void changesOnlyTheRecordedLineAndRejectsStaleSourceLocations() throws IOException {
+        Path path = directory.resolve("repeat.mui");
+        Files.writeString(path, "_item\r\n  pos = 1,2  \r\n_item\r\n  pos=3,4\r\n");
+        MuiDocument document = MuiDocument.read(path);
+
+        MuiDocument edited = document.replacePropertyAtLine(4, "pos", "3,4", "5,6");
+
+        assertEquals("_item\r\n  pos = 1,2  \r\n_item\r\n  pos=5,6\r\n", edited.text());
+        assertThrows(IllegalStateException.class,
+                () -> edited.replacePropertyAtLine(4, "pos", "3,4", "7,8"));
+        assertThrows(IllegalStateException.class,
+                () -> document.replacePropertyAtLine(2, "pos", "3,4", "7,8"));
+    }
+
+    @Test
     void keepsGb18030AndRejectsUnrepresentableValueWithoutTouchingFile() throws IOException {
         Charset legacy = Charset.forName("GB18030");
         Path path = directory.resolve("legacy.mui");

@@ -62,8 +62,12 @@ final class MuiSkinLoader {
                 Deque<Boolean> conditions = new ArrayDeque<>();
                 boolean skip = false;
                 boolean animation = false;
+                int lineNumber = 0;
+                int sectionLine = 0;
+                boolean grouped = false;
                 String line;
                 while ((line = reader.readLine()) != null) {
+                    lineNumber++;
                     boolean property = line.startsWith("\t") || line.startsWith("  ");
                     line = line.trim();
                     if (line.isEmpty() || line.startsWith("#")) continue;
@@ -94,7 +98,8 @@ final class MuiSkinLoader {
                             boolean embedded = name.equals("motion") && value.startsWith(":name=");
                             String embeddedName = "ea_" + currentComponents.getFirst().getFullName();
                             for (int i = 0; i < currentComponents.size(); i++) {
-                                currentComponents.get(i).putProperty(name, embedded ? embeddedName : value, i);
+                                currentComponents.get(i).putProperty(name, embedded ? embeddedName : value, i,
+                                        new MuiSourceLocation(normalized, sectionLine, lineNumber, grouped));
                             }
                             if (embedded) {
                                 UISComponent component = new UISComponent(":" + embeddedName, imagePaths, skin);
@@ -104,7 +109,10 @@ final class MuiSkinLoader {
                         }
                     } else {
                         currentComponents.clear();
-                        for (String name : parseComponentNames(line)) {
+                        List<String> names = parseComponentNames(line);
+                        sectionLine = lineNumber;
+                        grouped = names.size() > 1;
+                        for (String name : names) {
                             currentComponents.add(components.computeIfAbsent(name,
                                     key -> new UISComponent(key, imagePaths, skin)));
                         }
