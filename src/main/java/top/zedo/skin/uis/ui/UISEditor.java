@@ -12,7 +12,6 @@ import javafx.scene.paint.Color;
 import javafx.scene.input.KeyCombination;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
-import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import top.zedo.skin.DeviceType;
@@ -27,20 +26,17 @@ import top.zedo.skin.uis.MuiPositionEditor;
 import top.zedo.skin.uis.MszWorkspace;
 import top.zedo.skin.uis.component.ImageComponentRenderer;
 import top.zedo.skin.v.MspInspector;
-import top.zedo.skin.v.VEditorPane;
 import top.zedo.skin.v.VSkinSnapshot;
 import top.zedo.zxncore.ZXLogger;
 import top.zedo.zxncore.ZXVersion;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
+import java.util.function.Consumer;
 
 public class UISEditor extends HBox {
 
@@ -48,7 +44,8 @@ public class UISEditor extends HBox {
     private DragSession dragSession;
     private boolean previewValid = true;
     private final Map<Tab, MszWorkspace> packageTabs = new HashMap<>();
-    private final Set<VEditorPane> vEditors = new HashSet<>();
+    private Runnable openFileRequest;
+    private Consumer<Path> vOpenRequest;
     Label previewStatus = new Label();
     UISCanvas uisCanvas = new UISCanvas() {
         {
@@ -77,32 +74,11 @@ public class UISEditor extends HBox {
             setTabClosingPolicy(TabClosingPolicy.ALL_TABS);
         }
     };
-    //private File lastDirectory = new File(System.getProperty("user.dir")); // 记录上一次选择的目录
     Button openFileButton = new Button("打开皮肤") {
         {
-            setOnAction(event -> {
-                Path file = Path.of(SkinConfig.data.lastOpenDir);
-                // 创建文件选择器
-                FileChooser fileChooser = new FileChooser();
-                // 设置初始目录为上一次选择的目录
-                if (Files.exists(file) & Files.isDirectory(file)) {
-                    fileChooser.setInitialDirectory(file.toAbsolutePath().toFile());
-                }
-                fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Malody 皮肤", "*.mui", "*.msz", "*.msp", "info.asm"));
-
-                // 显示文件选择对话框
-                File selectedFile = fileChooser.showOpenDialog(null);
-
-                if (selectedFile != null) {
-                    System.out.println("Selected File: " + selectedFile.getAbsolutePath());
-
-                    openFIle(selectedFile.toPath());
-                    // 记录本次选择的目录
-                    SkinConfig.data.lastOpenDir = selectedFile.getParentFile().toString();
-                } else {
-                    System.out.println("No file selected.");
-                }
-
+            setOnAction(_ -> {
+                if (openFileRequest == null) throw new IllegalStateException("统一工作区尚未初始化");
+                openFileRequest.run();
             });
         }
     };
@@ -417,14 +393,25 @@ public class UISEditor extends HBox {
             //初始化 (载入配置 使用资源)
             ZXLogger.info("初始化配置");
             UISEditor uISEditor = new UISEditor();
-            Scene scene = new Scene(uISEditor);
-            scene.getAccelerators().put(KeyCombination.keyCombination("Shortcut+S"), uISEditor::saveActiveMui);
+            SkinStudioWindow workspace = new SkinStudioWindow(uISEditor);
+            Scene scene = new Scene(workspace);
+            scene.getAccelerators().put(KeyCombination.keyCombination("Shortcut+O"), workspace::chooseAndOpen);
+            scene.getAccelerators().put(KeyCombination.keyCombination("Shortcut+S"), workspace::saveActive);
             scene.getStylesheets().addAll("resources/baseExpansionPack/color/style.css");
             scene.getStylesheets().addAll("resources/baseExpansionPack/color/dark.css");
             Stage stage = new Stage();
             stage.setScene(scene);
             stage.setTitle("Malody Skin Studio " + VERSION);
             stage.show();
+            Runnable updateMinimumSize = () -> {
+                double windowExtraWidth = Math.max(0, stage.getWidth() - scene.getWidth());
+                double windowExtraHeight = Math.max(0, stage.getHeight() - scene.getHeight());
+                stage.setMinWidth(workspace.minWidth(-1) + windowExtraWidth);
+                stage.setMinHeight(workspace.minHeight(-1) + windowExtraHeight);
+            };
+            updateMinimumSize.run();
+            uISEditor.minWidthProperty().addListener((_, _, _) -> updateMinimumSize.run());
+            uISEditor.minHeightProperty().addListener((_, _, _) -> updateMinimumSize.run());
             if (args.length > 0) {
                 String filename = String.join(" ", args);
                 if (filename.length() >= 2 && filename.startsWith("\"") && filename.endsWith("\"")) {
@@ -432,91 +419,29 @@ public class UISEditor extends HBox {
                 }
                 Path initialFile = Path.of(filename);
                 if (Files.isRegularFile(initialFile)) {
-                    uISEditor.openFIle(initialFile);
+                    workspace.open(initialFile);
                 } else {
                     ZXLogger.warning("找不到皮肤文件: " + initialFile);
                 }
             }
             stage.setOnCloseRequest(event -> {
-                for (VEditorPane editor : uISEditor.vEditors) {
-                    if (!editor.canClose()) {
-                        event.consume();
-                        return;
-                    }
-                }
-                for (Tab tab : uISEditor.tabPane.getTabs()) {
-                    if (tab.getContent() instanceof VirtualizedScrollPane<?> pane
-                            && pane.getContent() instanceof UISCodeArea codeArea) {
-                        try {
-                            codeArea.saveNow();
-                        } catch (IOException error) {
-                            showSaveError(codeArea, error);
-                            event.consume();
-                            return;
-                        }
-                    }
-                }
-                for (MszWorkspace workspace : uISEditor.packageTabs.values()) {
-                    try {
-                        workspace.syncPending();
-                    } catch (IOException error) {
-                        new Alert(Alert.AlertType.ERROR, "无法同步 MSZ: " + error.getMessage()).showAndWait();
-                        event.consume();
-                        return;
-                    }
-                }
-                for (MszWorkspace workspace : uISEditor.packageTabs.values()) {
-                    try {
-                        workspace.close();
-                    } catch (IOException error) {
-                        new Alert(Alert.AlertType.ERROR, "无法清理 MSZ 临时目录: " + error.getMessage()).showAndWait();
-                        event.consume();
-                        return;
-                    }
-                }
-                for (Tab tab : uISEditor.tabPane.getTabs()) {
-                    if (tab.getContent() instanceof VirtualizedScrollPane<?> pane
-                            && pane.getContent() instanceof UISCodeArea codeArea) {
-                        try {
-                            codeArea.closeSafely();
-                        } catch (IOException error) {
-                            showSaveError(codeArea, error);
-                            event.consume();
-                            return;
-                        }
-                    }
+                if (!workspace.canCloseAll()) {
+                    event.consume();
+                    return;
                 }
                 SkinConfig.save();
                 System.exit(0);
-            });
-            uISEditor.minWidthProperty().addListener((observable, oldValue, newValue) -> {
-                stage.setMinWidth(newValue.doubleValue());
-            });
-            uISEditor.minHeightProperty().addListener((observable, oldValue, newValue) -> {
-                stage.setMinHeight(newValue.doubleValue());
             });
         });
 
 
     }
 
-    public void openFIle(Path path) {
+    void openFIle(Path path) {
         String filename = path.getFileName().toString().toLowerCase();
         if (filename.endsWith(".msp") || filename.equals("info.asm")) {
-            try {
-                VEditorPane editor = new VEditorPane(path);
-                Stage window = new Stage();
-                window.setScene(new Scene(editor, 1190, 760));
-                window.setTitle("Malody V · " + path.getFileName());
-                window.setOnCloseRequest(event -> {
-                    if (!editor.canClose()) event.consume();
-                });
-                window.setOnHidden(_ -> vEditors.remove(editor));
-                vEditors.add(editor);
-                window.show();
-            } catch (IOException error) {
-                new Alert(Alert.AlertType.ERROR, "无法打开 V 皮肤: " + error.getMessage()).showAndWait();
-            }
+            if (vOpenRequest == null) throw new IllegalStateException("统一工作区尚未初始化");
+            vOpenRequest.accept(path);
             return;
         }
         if (filename.endsWith(".msz")) {
@@ -528,6 +453,52 @@ public class UISEditor extends HBox {
         } catch (IOException error) {
             new Alert(Alert.AlertType.ERROR, "无法打开 MUI 皮肤: " + error.getMessage()).showAndWait();
         }
+    }
+
+    void setOpenFileRequest(Runnable request) { openFileRequest = request; }
+
+    void setVOpenRequest(Consumer<Path> request) { vOpenRequest = request; }
+
+    boolean canCloseAll() {
+        for (Tab tab : tabPane.getTabs()) {
+            if (tab.getContent() instanceof VirtualizedScrollPane<?> pane
+                    && pane.getContent() instanceof UISCodeArea codeArea) {
+                try {
+                    codeArea.saveNow();
+                } catch (IOException error) {
+                    showSaveError(codeArea, error);
+                    return false;
+                }
+            }
+        }
+        for (MszWorkspace workspace : packageTabs.values()) {
+            try {
+                workspace.syncPending();
+            } catch (IOException error) {
+                new Alert(Alert.AlertType.ERROR, "无法同步 MSZ: " + error.getMessage()).showAndWait();
+                return false;
+            }
+        }
+        for (MszWorkspace workspace : packageTabs.values()) {
+            try {
+                workspace.close();
+            } catch (IOException error) {
+                new Alert(Alert.AlertType.ERROR, "无法清理 MSZ 临时目录: " + error.getMessage()).showAndWait();
+                return false;
+            }
+        }
+        for (Tab tab : tabPane.getTabs()) {
+            if (tab.getContent() instanceof VirtualizedScrollPane<?> pane
+                    && pane.getContent() instanceof UISCodeArea codeArea) {
+                try {
+                    codeArea.closeSafely();
+                } catch (IOException error) {
+                    showSaveError(codeArea, error);
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     private void openMsz(Path path) {
@@ -605,7 +576,7 @@ public class UISEditor extends HBox {
         //uisCanvas.loadSkin(path);
     }
 
-    private void saveActiveMui() {
+    void saveActiveMui() {
         Tab tab = tabPane.getSelectionModel().getSelectedItem();
         if (tab == null || !(tab.getContent() instanceof VirtualizedScrollPane<?> pane)
                 || !(pane.getContent() instanceof UISCodeArea codeArea)) return;

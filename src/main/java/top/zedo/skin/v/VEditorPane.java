@@ -22,7 +22,6 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.shape.Rectangle;
-import javafx.stage.Stage;
 import javafx.util.StringConverter;
 import top.zedo.skin.v.proto.SkinVProto.SkinFile;
 
@@ -35,6 +34,7 @@ import java.util.Optional;
 public final class VEditorPane extends BorderPane {
     private final MspSkinDocument document;
     private final VSkinEditModel draft;
+    private final Label heading;
     private final ListView<String> modules = new ListView<>();
     private final TextField title = new TextField();
     private final TextField creator = new TextField();
@@ -69,7 +69,7 @@ public final class VEditorPane extends BorderPane {
         draft = new VSkinEditModel(document.skin());
         runtimeCompare = new VRuntimeComparePane(document);
 
-        Label heading = new Label("Malody V · " + document.path().getFileName());
+        heading = new Label("Malody V · " + document.path().getFileName());
         Button save = new Button("保存皮肤");
         save.setOnAction(_ -> save());
         HBox toolbar = new HBox(12, heading, save);
@@ -353,7 +353,7 @@ public final class VEditorPane extends BorderPane {
         }
     }
 
-    /** Preserve edits when the separate V editor window is closed. */
+    /** Preserve edits when this V editor tab or the application is closed. */
     public boolean canClose() {
         if (!applyModule()) return false;
         draft.updateMetadata(title.getText(), creator.getText(), description.getText(), cover.getText());
@@ -368,6 +368,8 @@ public final class VEditorPane extends BorderPane {
         if (choice.isEmpty() || choice.get() == ButtonType.CANCEL) return false;
         return choice.get() == discardChoice || save();
     }
+
+    public boolean saveNow() { return save(); }
 
     private boolean save() {
         if (!applyModule()) return false;
@@ -386,7 +388,7 @@ public final class VEditorPane extends BorderPane {
             luaStatus.setText(luaBaseline.diagnostic());
             refreshScene();
             runtimeCompare.refreshAfterSave();
-            if (getScene() != null && getScene().getWindow() instanceof Stage stage) stage.setTitle("Malody V · " + title.getText());
+            heading.setText("Malody V · " + title.getText());
             alert("已保存", document.path().toString());
             return true;
         } catch (IOException error) {
