@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.attribute.PosixFilePermission;
+import java.util.Arrays;
 import java.util.Set;
 
 /** Old MUI skins in the wild use both UTF-8 and GB18030. */
@@ -24,10 +25,10 @@ public final class MuiTextFile {
                 && (bytes[1] & 0xff) == 0xbb && (bytes[2] & 0xff) == 0xbf;
         int offset = bom ? 3 : 0;
         try {
-            return new Decoded(decode(bytes, offset, StandardCharsets.UTF_8), StandardCharsets.UTF_8, bom);
+            return new Decoded(decode(bytes, offset, StandardCharsets.UTF_8), StandardCharsets.UTF_8, bom, bytes);
         } catch (CharacterCodingException ignored) {
             try {
-                return new Decoded(decode(bytes, 0, LEGACY), LEGACY, false);
+                return new Decoded(decode(bytes, 0, LEGACY), LEGACY, false, bytes);
             } catch (CharacterCodingException error) {
                 throw new IOException("无法识别 MUI 文本编码: " + path, error);
             }
@@ -40,7 +41,23 @@ public final class MuiTextFile {
                 .decode(ByteBuffer.wrap(bytes, offset, bytes.length - offset)).toString();
     }
 
-    public record Decoded(String text, Charset charset, boolean utf8Bom) {
+    public static final class Decoded {
+        private final String text;
+        private final Charset charset;
+        private final boolean utf8Bom;
+        private byte[] savedBytes;
+
+        private Decoded(String text, Charset charset, boolean utf8Bom, byte[] savedBytes) {
+            this.text = text;
+            this.charset = charset;
+            this.utf8Bom = utf8Bom;
+            this.savedBytes = savedBytes;
+        }
+
+        public String text() { return text; }
+        public Charset charset() { return charset; }
+        public boolean utf8Bom() { return utf8Bom; }
+
         /** RichTextFX edits use LF internally; keep a source file's uniform line ending. */
         public void writeEditorText(Path path, String contents) throws IOException {
             String ending = uniformLineEnding(text);
@@ -48,10 +65,16 @@ public final class MuiTextFile {
                 contents = contents.replace("\r\n", "\n").replace('\r', '\n')
                         .replace("\n", ending);
             }
-            write(path, contents);
+            write(path, contents, true);
         }
 
         public void write(Path path, String contents) throws IOException {
+            write(path, contents, false);
+        }
+
+        private void write(Path path, String contents, boolean checkExternalChanges) throws IOException {
+            Path target = Files.isSymbolicLink(path) ? path.toRealPath() : path;
+            if (checkExternalChanges) verifyUnchanged(target);
             byte[] bytes;
             try {
                 ByteBuffer encoded = charset.newEncoder().onMalformedInput(CodingErrorAction.REPORT)
@@ -69,7 +92,6 @@ public final class MuiTextFile {
                 System.arraycopy(bytes, 0, withBom, 3, bytes.length);
                 bytes = withBom;
             }
-            Path target = Files.isSymbolicLink(path) ? path.toRealPath() : path;
             Path temporary = Files.createTempFile(target.toAbsolutePath().getParent(), ".mui-save-", ".tmp");
             try {
                 Files.write(temporary, bytes);
@@ -81,14 +103,22 @@ public final class MuiTextFile {
                         // Non-POSIX file systems still support replacing the content.
                     }
                 }
+                if (checkExternalChanges) verifyUnchanged(target);
                 try {
                     Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE,
                             StandardCopyOption.REPLACE_EXISTING);
                 } catch (AtomicMoveNotSupportedException ignored) {
                     Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
                 }
+                savedBytes = bytes;
             } finally {
                 Files.deleteIfExists(temporary);
+            }
+        }
+
+        private void verifyUnchanged(Path path) throws IOException {
+            if (!Arrays.equals(savedBytes, Files.readAllBytes(path))) {
+                throw new IOException("MUI 文件已被外部修改，请重新打开，未覆盖: " + path);
             }
         }
 

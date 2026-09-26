@@ -1,5 +1,6 @@
 package top.zedo.skin.v;
 
+import javafx.animation.PauseTransition;
 import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -25,6 +26,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.shape.Rectangle;
 import javafx.util.StringConverter;
+import javafx.util.Duration;
 import top.zedo.skin.v.proto.SkinVProto.SkinFile;
 
 import java.io.ByteArrayInputStream;
@@ -60,6 +62,8 @@ public final class VEditorPane extends BorderPane {
     private final TextField height = new TextField();
     private final TextField alpha = new TextField();
     private final TextField rotate = new TextField();
+    private final Label inspectorStatus = new Label();
+    private final PauseTransition previewDebounce = new PauseTransition(Duration.millis(300));
     private final Label moduleKind = new Label();
     private final Label previewStatus = new Label();
     private final ImageView preview = new ImageView();
@@ -69,6 +73,7 @@ public final class VEditorPane extends BorderPane {
     private final ComboBox<Integer> sceneLayer = new ComboBox<>();
     private final ComboBox<VSceneLayout.Platform> scenePlatform = new ComboBox<>();
     private final Label sceneStatus = new Label();
+    private final Label selectedSceneStatus = new Label();
     private final VRuntimeComparePane runtimeCompare;
     private int currentModule = -1;
     private boolean changingSelection;
@@ -110,9 +115,18 @@ public final class VEditorPane extends BorderPane {
         metadata.setPadding(new Insets(12));
         description.setPrefRowCount(3);
 
-        VBox properties = new VBox(8, sectionTitle("组件属性"), moduleKind, row("名称", name), row("资源 / 文字", resource),
-                row("X", x), row("Y", y), row("偏移 X", dx), row("偏移 Y", dy),
-                row("宽度", width), row("高度", height), row("透明度", alpha), row("旋转", rotate));
+        Button previewChanges = new Button("更新预览（未保存）");
+        Label previewHint = new Label("有效属性会自动更新预览；“保存皮肤”才写入文件。");
+        previewHint.setWrapText(true);
+        inspectorStatus.setWrapText(true);
+        inspectorStatus.getStyleClass().add("v-inspector-error");
+        inspectorStatus.visibleProperty().bind(inspectorStatus.textProperty().isNotEmpty());
+        inspectorStatus.managedProperty().bind(inspectorStatus.visibleProperty());
+        moduleKind.setWrapText(true);
+        VBox properties = new VBox(8, sectionTitle("组件属性"), moduleKind, row("名称", name), row("资源或文字", resource),
+                row("位置 X", x), row("位置 Y", y), row("偏移 X", dx), row("偏移 Y", dy),
+                row("宽度", width), row("高度", height), row("透明度", alpha), row("旋转", rotate),
+                inspectorStatus, previewChanges, previewHint);
         properties.getStyleClass().add("v-inspector");
         properties.setPadding(new Insets(12));
         properties.setPrefWidth(300);
@@ -168,15 +182,15 @@ public final class VEditorPane extends BorderPane {
             if (count > mostImages) { firstLayer = layer; mostImages = count; }
         }
         if (firstLayer != null) sceneLayer.getSelectionModel().select(firstLayer);
-        Button refreshScene = new Button("应用属性并刷新");
-        refreshScene.setOnAction(_ -> { if (applyModule()) refreshScene(); });
         HBox sceneTools = new HBox(8, new Label("图层"), sceneLayer,
-                new Label("平台"), scenePlatform, refreshScene);
+                new Label("平台"), scenePlatform);
         sceneTools.setAlignment(Pos.CENTER_LEFT);
+        selectedSceneStatus.setWrapText(true);
+        selectedSceneStatus.getStyleClass().add("v-selected-status");
         VBox sceneBox = new VBox(10, sectionTitle("布局概览"),
                 new Label("原始参数 · 参考视口 1920×1080 · 不执行 Lua"), sceneTools,
-                new ScrollPane(sceneCanvas), sceneStatus,
-                new Label("可拖动图片调整偏移量，点击“保存皮肤”写回。Lua 仍可能在游戏中改写这些图片。"));
+                new ScrollPane(sceneCanvas), selectedSceneStatus, sceneStatus,
+                new Label("可拖动图片调整偏移量；“保存皮肤”才写入文件。此画布不执行 Lua。"));
         sceneBox.getStyleClass().add("v-scene-panel");
         sceneBox.setPadding(new Insets(12));
         Tab resourceTab = new Tab("单资源", imageBox);
@@ -204,6 +218,17 @@ public final class VEditorPane extends BorderPane {
         TabPane previews = new TabPane(sceneTab, resourceTab, luaTab, runtimeTab, metadataTab);
         previews.getStyleClass().add("v-preview-tabs");
         previews.getSelectionModel().select(sceneTab);
+        previewChanges.setOnAction(_ -> {
+            previewDebounce.stop();
+            if (applyModule()) {
+                refreshScene();
+                if (currentModule >= 0) refreshPreview(draft.module(currentModule));
+                previews.getSelectionModel().select(sceneTab);
+            }
+        });
+        for (TextField field : new TextField[]{name, resource, x, y, dx, dy, width, height, alpha, rotate}) {
+            field.setOnAction(_ -> previewChanges.fire());
+        }
         SplitPane workspace = new SplitPane(navigator, previews, propertyScroll);
         workspace.setDividerPositions(0.21, 0.75);
         setCenter(workspace);
@@ -215,7 +240,18 @@ public final class VEditorPane extends BorderPane {
         for (int i = 0; i < draft.moduleCount(); i++) modules.getItems().add(moduleLabel(i));
         modules.getSelectionModel().selectedIndexProperty().addListener((_, oldIndex, newIndex) -> {
             if (changingSelection) return;
+            previewDebounce.stop();
             int next = newIndex.intValue();
+            if (next < 0 && oldIndex.intValue() >= 0) {
+                changingSelection = true;
+                try {
+                    modules.getSelectionModel().select(oldIndex.intValue());
+                } finally {
+                    changingSelection = false;
+                }
+                return;
+            }
+            SkinFile.Module previous = currentModule >= 0 ? draft.module(currentModule) : null;
             if (!applyModule()) {
                 changingSelection = true;
                 modules.getSelectionModel().select(oldIndex.intValue());
@@ -224,10 +260,16 @@ public final class VEditorPane extends BorderPane {
             }
             currentModule = next;
             showModule(next);
+            if (previous != null && !previous.equals(draft.module(oldIndex.intValue()))) refreshScene();
         });
         if (!modules.getItems().isEmpty()) modules.getSelectionModel().selectFirst();
         refreshScene();
         watchEdits();
+        previewDebounce.setOnFinished(_ -> {
+            if (!applyModule(false)) return;
+            refreshScene();
+            if (currentModule >= 0) refreshPreview(draft.module(currentModule));
+        });
     }
 
     private static HBox row(String label, TextField field) {
@@ -248,7 +290,12 @@ public final class VEditorPane extends BorderPane {
     private void watchEdits() {
         for (TextField field : new TextField[]{title, creator, cover, name, resource,
                 x, y, dx, dy, width, height, alpha, rotate}) {
-            field.textProperty().addListener((_, _, _) -> markDirty());
+            field.textProperty().addListener((_, _, _) -> {
+                field.getStyleClass().remove("v-invalid");
+                markDirty();
+                if (!updatingFields && field != title && field != creator && field != cover)
+                    previewDebounce.playFromStart();
+            });
         }
         description.textProperty().addListener((_, _, _) -> markDirty());
         luaSource.textProperty().addListener((_, _, _) -> markDirty());
@@ -287,6 +334,10 @@ public final class VEditorPane extends BorderPane {
             String resourceName = VModuleResource.value(draft.module(i)).toLowerCase(java.util.Locale.ROOT);
             if (!label.contains(query) && !resourceName.contains(query)) continue;
             modules.getSelectionModel().select(i);
+            if (modules.getSelectionModel().getSelectedIndex() != i) {
+                moduleSearchStatus.setText("先修正右侧组件属性，再定位其他组件");
+                return;
+            }
             modules.scrollTo(i);
             moduleSearchStatus.setText("已定位组件 #" + (i + 1));
             return;
@@ -297,7 +348,31 @@ public final class VEditorPane extends BorderPane {
     private String moduleLabel(int index) {
         SkinFile.Module module = draft.module(index);
         String text = module.hasMeta() ? module.getMeta().getDesc() : "";
-        return (index + 1) + ". " + (text.isBlank() ? "(未命名)" : text) + " · " + module.getType();
+        return (index + 1) + ". " + (text.isBlank() ? "(未命名)" : text) + " · " + moduleTypeName(module.getType());
+    }
+
+    /** Names follow Emiria's SkinModuleSubType; unknown IDs remain visible. */
+    private static String moduleTypeName(int type) {
+        return switch (type) {
+            case 4900 -> "填充图片";
+            case 5000 -> "图片";
+            case 5001 -> "文字";
+            case 5002 -> "帧动画";
+            case 5003 -> "数字";
+            case 5004 -> "颜色";
+            case 5005 -> "视频";
+            case 5006 -> "声音";
+            default -> "类型 " + type;
+        };
+    }
+
+    private static String unitName(SkinFile.ModuleParamUnit unit) {
+        return switch (unit) {
+            case Percent -> "%";
+            case Unit -> "游戏单位";
+            case PX -> "像素";
+            case UNRECOGNIZED -> "未知";
+        };
     }
 
     private void showModule(int index) {
@@ -307,14 +382,16 @@ public final class VEditorPane extends BorderPane {
             moduleKind.setText("");
             preview.setImage(null);
             previewStatus.setText("");
+            selectedSceneStatus.setText("请选择组件，查看它能否出现在参考画布中。");
             runtimeCompare.selectModule(index);
             return;
         }
         SkinFile.Module module = draft.module(index);
         SkinFile.ModuleParam param = module.getParam();
         VSkinEditModel.ModuleFields fields = draft.fields(index);
-        moduleKind.setText("用途 " + module.getUsage() + " · 类型 " + module.getType()
-                + " · 位置单位 " + param.getXu() + "/" + param.getYu());
+        moduleKind.setText("用途 " + module.getUsage() + " · " + moduleTypeName(module.getType())
+                + " (" + module.getType() + ")\n位置单位 X: " + unitName(param.getXu())
+                + " · Y: " + unitName(param.getYu()));
         updatingFields = true;
         try {
             name.setText(fields.name());
@@ -341,6 +418,7 @@ public final class VEditorPane extends BorderPane {
             refreshScene();
         } else {
             highlightSceneSelection();
+            updateSelectedSceneStatus();
         }
     }
 
@@ -350,12 +428,14 @@ public final class VEditorPane extends BorderPane {
         Integer layer = sceneLayer.getValue();
         if (layer == null) {
             sceneStatus.setText("此皮肤没有可显示的图层");
+            updateSelectedSceneStatus();
             return;
         }
         if (!VSceneLayout.isFullScreenLayer(layer)) {
             sceneStatus.setText(layer == 2 || layer == 3
                     ? "游玩区层使用独立的赛道容器和变换；当前参考画布无法准确投影。"
                     : "该层没有已核实的全屏容器；暂不投影。");
+            updateSelectedSceneStatus();
             return;
         }
         VSceneLayout.Platform platform = scenePlatform.getValue();
@@ -418,6 +498,70 @@ public final class VEditorPane extends BorderPane {
         }
         sceneStatus.setText(plan.status());
         highlightSceneSelection();
+        updateSelectedSceneStatus();
+    }
+
+    private void updateSelectedSceneStatus() {
+        if (currentModule < 0 || currentModule >= draft.moduleCount()) return;
+        SkinFile.Module module = draft.module(currentModule);
+        int layer = module.getParam().getLayer();
+        String reason;
+        if (!VSceneLayout.isFullScreenLayer(layer)) {
+            reason = layer == 2 || layer == 3
+                    ? "游玩区层使用独立的赛道容器，参考画布无法准确投影。"
+                    : "该层没有已核实的全屏容器，暂不投影。";
+        } else if (!Integer.valueOf(layer).equals(sceneLayer.getValue())) {
+            reason = "组件在图层 " + layer + "，当前查看图层 " + sceneLayer.getValue() + "。";
+        } else if (sceneNodes.containsKey(currentModule)) {
+            Bounds bounds = sceneNodes.get(currentModule).getBoundsInParent();
+            reason = bounds.getMaxX() <= 0 || bounds.getMinX() >= 640
+                    || bounds.getMaxY() <= 0 || bounds.getMinY() >= 360
+                    ? "已投影，但位于参考画布外；可检查位置与偏移量。"
+                    : "已在参考画布中描边；可拖动图片或修改右侧属性。";
+        } else if (module.getType() != VSceneLayout.CUSTOM_IMAGE || module.getUsage() != 99
+                || !module.hasImage()) {
+            reason = "当前只投影静态自定义图片；此组件可在右侧编辑，如有独立资源可在“单资源”页查看。";
+        } else if (module.getMeta().getDisabled()) {
+            reason = "组件已停用，静态画布不显示。";
+        } else if (module.getTriggersCount() > 0 || module.getAnimationsCount() > 0) {
+            reason = "组件带触发器或动画，静态画布不执行这些行为。";
+        } else if (module.getParam().getAnchorNote()) {
+            reason = "组件使用音符锚点，参考画布无法投影。";
+        } else if (module.getParam().getAlpha() <= 0) {
+            reason = "透明度不大于 0，静态画布不显示。";
+        } else if (module.getImage().getFile().isBlank()) {
+            reason = "图片资源名为空，静态画布无法读取图片。";
+        } else if (!VSceneLayout.isStaticImage(module)) {
+            reason = "图片使用了参考画布尚未支持的资源、绘制、尺寸或位置参数。";
+        } else {
+            VSceneLayout.Platform platform = scenePlatform.getValue();
+            VSceneLayout.SceneContext context = VSceneLayout.REFERENCE.withPlatform(
+                    platform == null ? VSceneLayout.Platform.WINDOWS : platform);
+            VSceneLayout.SceneMatch match = VSceneLayout.sceneMatch(module, context);
+            reason = switch (match) {
+                case MISMATCH -> "场景条件与当前参考视口或平台不匹配。";
+                case UNKNOWN -> "场景条件无法由当前参考视口和平台可靠判定。";
+                case MATCH -> unprojectedImageReason(module, context);
+            };
+        }
+        selectedSceneStatus.setText("选中组件 #" + (currentModule + 1) + "：" + reason);
+    }
+
+    private String unprojectedImageReason(SkinFile.Module module, VSceneLayout.SceneContext context) {
+        try {
+            byte[] bytes = document.resource(module.getImage().getFile());
+            if (bytes == null) return "找不到图片资源；可在“单资源”页核对路径。";
+            Image image = new Image(new ByteArrayInputStream(bytes));
+            if (image.isError()) return "图片资源无法解码；可在“单资源”页核对文件。";
+            try {
+                VSceneLayout.project(module, context, 640, 360, image.getWidth(), image.getHeight());
+            } catch (IllegalArgumentException error) {
+                return "图片尺寸无法投影：" + error.getMessage();
+            }
+            return "当前层最多显示 80 张图片，此组件超过显示上限。";
+        } catch (IOException error) {
+            return "图片资源读取失败：" + error.getMessage();
+        }
     }
 
     private void highlightSceneSelection() {
@@ -464,22 +608,62 @@ public final class VEditorPane extends BorderPane {
     }
 
     private boolean applyModule() {
+        return applyModule(true);
+    }
+
+    private boolean applyModule(boolean reportErrors) {
         if (currentModule < 0 || currentModule >= draft.moduleCount()) return true;
         try {
             draft.updateModule(currentModule, new VSkinEditModel.ModuleFields(name.getText(), resource.getText(),
                     x.getText(), y.getText(), dx.getText(), dy.getText(), width.getText(), height.getText(),
                     alpha.getText(), rotate.getText()));
-            modules.getItems().set(currentModule, moduleLabel(currentModule));
+            String label = moduleLabel(currentModule);
+            if (!label.equals(modules.getItems().get(currentModule))) {
+                changingSelection = true;
+                try {
+                    modules.getItems().set(currentModule, label);
+                    modules.getSelectionModel().select(currentModule);
+                } finally {
+                    changingSelection = false;
+                }
+            }
+            inspectorStatus.setText("");
             return true;
         } catch (NumberFormatException error) {
-            showError("组件属性应为有效数字", error.getMessage());
+            if (!reportErrors) return false;
+            String detail = error.getMessage();
+            String fieldName = detail == null ? "" : detail.split(":", 2)[0];
+            TextField invalid = switch (fieldName) {
+                case "X" -> x;
+                case "Y" -> y;
+                case "偏移 X" -> dx;
+                case "偏移 Y" -> dy;
+                case "宽度" -> width;
+                case "高度" -> height;
+                case "透明度" -> alpha;
+                case "旋转" -> rotate;
+                default -> null;
+            };
+            if (invalid != null) {
+                if (!invalid.getStyleClass().contains("v-invalid")) invalid.getStyleClass().add("v-invalid");
+                invalid.requestFocus();
+            }
+            inspectorStatus.setText("请输入有效数字：" + (detail == null ? "组件属性" : detail));
             return false;
         }
     }
 
     /** Preserve edits when this V editor tab or the application is closed. */
     public boolean canClose() {
-        if (!applyModule()) return false;
+        previewDebounce.stop();
+        if (!applyModule()) {
+            ButtonType discardInvalid = new ButtonType("不保存，关闭");
+            Alert confirmInvalid = new Alert(Alert.AlertType.CONFIRMATION,
+                    "组件属性中有无效数字。关闭将丢弃未保存的修改。", discardInvalid, ButtonType.CANCEL);
+            confirmInvalid.setHeaderText("无法保存当前修改");
+            if (getScene() != null) confirmInvalid.initOwner(getScene().getWindow());
+            return confirmInvalid.showAndWait().orElse(ButtonType.CANCEL) == discardInvalid;
+        }
         draft.updateMetadata(title.getText(), creator.getText(), description.getText(), cover.getText());
         if (draft.skin().equals(document.skin()) && luaSource.getText().equals(luaBaseline.source())) return true;
         ButtonType saveChoice = new ButtonType("保存");
@@ -496,6 +680,7 @@ public final class VEditorPane extends BorderPane {
     public boolean saveNow() { return save(); }
 
     private boolean save() {
+        previewDebounce.stop();
         if (!applyModule()) return false;
         draft.updateMetadata(title.getText(), creator.getText(), description.getText(), cover.getText());
         try {

@@ -34,6 +34,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -436,7 +437,9 @@ public class UISEditor extends HBox {
                     filename = filename.substring(1, filename.length() - 1);
                 }
                 Path initialFile = Path.of(filename);
-                if (Files.isRegularFile(initialFile)) {
+                if (Files.isRegularFile(initialFile)
+                        || (Files.isDirectory(initialFile)
+                        && Files.isRegularFile(initialFile.resolve("info.asm")))) {
                     workspace.open(initialFile);
                 } else {
                     ZXLogger.warning("找不到皮肤文件: " + initialFile);
@@ -467,7 +470,16 @@ public class UISEditor extends HBox {
             return;
         }
         try {
-            openMuiTab(path, null, path.getFileName().toString());
+            Path normalized = path.toRealPath();
+            for (Tab tab : tabPane.getTabs()) {
+                UISCodeArea open = codeArea(tab);
+                if (open != null && !packageTabs.containsKey(tab)
+                        && open.getFile().toRealPath().equals(normalized)) {
+                    tabPane.getSelectionModel().select(tab);
+                    return;
+                }
+            }
+            openMuiTab(normalized, null, path.getFileName().toString());
         } catch (IOException error) {
             new Alert(Alert.AlertType.ERROR, "无法打开 MUI 皮肤: " + error.getMessage()).showAndWait();
         }
@@ -499,7 +511,7 @@ public class UISEditor extends HBox {
                 return false;
             }
         }
-        for (MszWorkspace workspace : packageTabs.values()) {
+        for (MszWorkspace workspace : new HashSet<>(packageTabs.values())) {
             try {
                 workspace.close();
             } catch (IOException error) {
@@ -524,14 +536,10 @@ public class UISEditor extends HBox {
     private void openMsz(Path path) {
         try {
             Path archive = path.toRealPath();
-            for (Map.Entry<Tab, MszWorkspace> entry : packageTabs.entrySet()) {
-                if (entry.getValue().archive().equals(archive)) {
-                    tabPane.getSelectionModel().select(entry.getKey());
-                    previewStatus.setText("此 MSZ 已打开；关闭标签页后可选择另一脚本");
-                    return;
-                }
-            }
-            MszWorkspace workspace = MszWorkspace.open(path);
+            MszWorkspace workspace = packageTabs.values().stream()
+                    .filter(open -> open.archive().equals(archive)).findFirst().orElse(null);
+            boolean newWorkspace = workspace == null;
+            if (newWorkspace) workspace = MszWorkspace.open(path);
             String selected;
             if (workspace.scriptEntries().size() == 1) {
                 selected = workspace.scriptEntries().getFirst();
@@ -542,16 +550,24 @@ public class UISEditor extends HBox {
                 choice.setContentText("编辑脚本：");
                 Optional<String> answer = choice.showAndWait();
                 if (answer.isEmpty()) {
-                    workspace.close();
+                    if (newWorkspace) workspace.close();
                     return;
                 }
                 selected = answer.get();
             }
             try {
-                openMuiTab(workspace.scriptPath(selected), workspace,
+                Path script = workspace.scriptPath(selected);
+                for (Map.Entry<Tab, MszWorkspace> entry : packageTabs.entrySet()) {
+                    UISCodeArea open = codeArea(entry.getKey());
+                    if (entry.getValue() == workspace && open != null && open.getFile().equals(script)) {
+                        tabPane.getSelectionModel().select(entry.getKey());
+                        return;
+                    }
+                }
+                openMuiTab(script, workspace,
                         path.getFileName() + " / " + selected);
             } catch (IOException | RuntimeException error) {
-                workspace.close();
+                if (newWorkspace) workspace.close();
                 throw error;
             }
         } catch (IOException | RuntimeException error) {
@@ -563,16 +579,8 @@ public class UISEditor extends HBox {
         Tab tab = new Tab();
         tab.setText(title);
         UISCodeArea uisCodeArea = new UISCodeArea(path, () -> {
-            if (workspace != null) {
-                try {
-                    workspace.syncScript(path);
-                } catch (IOException error) {
-                    previewStatus.setText("MSZ 保存失败");
-                    previewStatus.setTooltip(new Tooltip(error.getMessage()));
-                    throw error;
-                }
-            }
-            refreshPreview(true);
+            if (workspace != null) workspace.syncScript(path);
+            if (tabPane.getSelectionModel().getSelectedItem() == tab) refreshPreview(true);
         });
         uisCodeArea.setSaveStatusListener((state, error) -> {
             tab.setText(state == UISCodeArea.SaveState.FAILED ? "⚠ " + title : title);
@@ -586,7 +594,10 @@ public class UISEditor extends HBox {
         tab.setOnCloseRequest(event -> {
             try {
                 uisCodeArea.saveNow();
-                if (workspace != null) workspace.close();
+                if (workspace != null && packageTabs.entrySet().stream()
+                        .noneMatch(entry -> entry.getKey() != tab && entry.getValue() == workspace)) {
+                    workspace.close();
+                }
                 uisCodeArea.closeSafely();
                 packageTabs.remove(tab);
             } catch (IOException error) {
@@ -607,25 +618,25 @@ public class UISEditor extends HBox {
         try {
             codeArea.saveNow();
             MszWorkspace workspace = packageTabs.get(tab);
-            if (workspace != null) {
-                workspace.syncPending();
-                refreshPreview(true);
-            }
+            if (workspace != null) workspace.syncPending();
+            refreshPreview(true);
             codeArea.markSaveSucceeded();
         } catch (IOException error) {
-            showSaveError(codeArea, error);
+            codeArea.markSaveFailed(error);
+            ZXLogger.warning("保存 MUI 文件失败: " + codeArea.getFile() + " - " + error.getMessage());
         }
     }
 
     private void showSaveStatus(UISCodeArea codeArea) {
         UISCodeArea.SaveState state = codeArea.getSaveState();
+        IOException error = codeArea.getSaveError();
         saveStatus.setText(switch (state) {
             case IDLE -> "自动保存已开启";
             case SAVING -> "自动保存中…";
             case SAVED -> "已保存";
-            case FAILED -> "自动保存失败";
+            case FAILED -> error != null && error.getMessage() != null
+                    && error.getMessage().contains("外部修改") ? "文件已被外部修改，未覆盖" : "保存失败";
         });
-        IOException error = codeArea.getSaveError();
         saveStatus.setTooltip(error == null ? null : new Tooltip(error.getMessage()));
         saveStatus.getStyleClass().removeAll("mui-save-failed", "mui-save-ok");
         saveStatus.getStyleClass().add(state == UISCodeArea.SaveState.FAILED
@@ -636,7 +647,7 @@ public class UISEditor extends HBox {
         try {
             uisCanvas.updateSkin();
             previewValid = true;
-            previewStatus.setText(saved ? "已保存" : "");
+            previewStatus.setText("");
             previewStatus.setTooltip(null);
         } catch (IOException error) {
             showPreviewError(error, saved);
@@ -645,7 +656,9 @@ public class UISEditor extends HBox {
 
     private void showPreviewError(IOException error, boolean saved) {
         previewValid = false;
-        previewStatus.setText(saved ? "已保存，预览失败" : "预览失败");
+        String message = error.getMessage();
+        previewStatus.setText((saved ? "已保存，预览失败" : "预览失败")
+                + (message == null || message.isBlank() ? "" : "：" + message));
         previewStatus.setTooltip(new Tooltip(error.getMessage()));
         ZXLogger.warning("预览 MUI 失败: " + error.getMessage());
     }

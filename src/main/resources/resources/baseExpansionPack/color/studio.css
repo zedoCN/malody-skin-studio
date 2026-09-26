@@ -169,6 +169,16 @@
     -fx-border-color: -studio-accent;
 }
 
+.v-editor .text-field.v-invalid,
+.v-editor .text-field.v-invalid:focused {
+    -fx-border-color: #e79696;
+}
+
+.v-editor .v-inspector-error {
+    -fx-text-fill: #e79696;
+    -fx-font-size: 12px;
+}
+
 .v-editor .text-field:disabled,
 .v-editor .text-area:disabled {
     -fx-opacity: 0.54;
@@ -257,6 +267,14 @@
     -fx-stroke-dash-array: 6 4;
 }
 
+.v-editor .v-selected-status {
+    -fx-background-color: #203038;
+    -fx-border-color: -studio-accent;
+    -fx-border-width: 0 0 0 3;
+    -fx-text-fill: -studio-text;
+    -fx-padding: 7 10 7 10;
+}
+
 /* 4.x editor controls share the workspace palette; the skin canvas keeps its own colors. */
 .mui-editor .mui-sidebar,
 .mui-editor .mui-toolbar,
@@ -334,4 +352,79 @@
 
 .mui-editor .mui-tabs > .tab-header-area .headers-region .tab:selected .tab-label {
     -fx-text-fill: -studio-text;
+}
+
+/* The first-run page explains formats before showing format-specific controls. */
+.skin-studio-window .studio-start {
+    -fx-background-color: linear-gradient(to bottom right, #171d23, #1e2b32);
+}
+
+.skin-studio-window .studio-start-eyebrow {
+    -fx-text-fill: -studio-accent;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+
+.skin-studio-window .studio-start-title {
+    -fx-text-fill: -studio-text;
+    -fx-font-size: 32px;
+    -fx-font-weight: bold;
+}
+
+.skin-studio-window .studio-start-description {
+    -fx-text-fill: -studio-muted;
+    -fx-font-size: 14px;
+}
+
+.skin-studio-window .studio-start-open {
+    -fx-background-color: #286d70;
+    -fx-border-color: #398c8d;
+    -fx-background-radius: 6;
+    -fx-border-radius: 6;
+    -fx-text-fill: #f4ffff;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-padding: 10 18 10 18;
+}
+
+.skin-studio-window .studio-start-open:hover {
+    -fx-background-color: #328486;
+}
+
+.skin-studio-window .studio-start-secondary {
+    -fx-background-color: -studio-raised;
+    -fx-border-color: -studio-border;
+    -fx-background-radius: 6;
+    -fx-border-radius: 6;
+    -fx-text-fill: -studio-text;
+    -fx-font-size: 14px;
+    -fx-padding: 10 16 10 16;
+}
+
+.skin-studio-window .studio-start-secondary:hover {
+    -fx-border-color: -studio-accent;
+    -fx-background-color: #31424b;
+}
+
+.skin-studio-window .studio-format-card {
+    -fx-background-color: -studio-surface;
+    -fx-border-color: -studio-border;
+    -fx-background-radius: 10;
+    -fx-border-radius: 10;
+}
+
+.skin-studio-window .studio-format-title {
+    -fx-text-fill: -studio-text;
+    -fx-font-size: 17px;
+    -fx-font-weight: bold;
+}
+
+.skin-studio-window .studio-format-extensions {
+    -fx-text-fill: -studio-accent;
+    -fx-font-size: 12px;
+}
+
+.skin-studio-window .studio-format-description {
+    -fx-text-fill: -studio-muted;
+    -fx-font-size: 13px;
 }

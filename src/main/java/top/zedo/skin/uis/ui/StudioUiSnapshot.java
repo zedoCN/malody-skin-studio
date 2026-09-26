@@ -20,10 +20,14 @@ final class StudioUiSnapshot {
 
     static void run(String[] args) {
         if (args.length != 3) throw new IllegalArgumentException(
-                "用法: --snapshot-ui <皮肤.mui|.msp> <输出.png>");
-        Path skin = args[1].startsWith("file:") ? Path.of(URI.create(args[1])) : Path.of(args[1]);
-        Path output = args[2].startsWith("file:") ? Path.of(URI.create(args[2])) : Path.of(args[2]);
-        if (!Files.isRegularFile(skin)) throw new IllegalArgumentException("找不到皮肤文件: " + skin);
+                "用法: --snapshot-ui <皮肤.mui|.msp|V目录|--start> <输出.png>");
+        boolean startPage = args[1].equals("--start");
+        Path skin = startPage ? null : pathArgument(args[1]);
+        Path output = pathArgument(args[2]);
+        if (!startPage && !Files.isRegularFile(skin) && !Files.isDirectory(skin))
+            throw new IllegalArgumentException("找不到皮肤文件或目录: " + skin);
+        if (!startPage && Files.isDirectory(skin) && !Files.isRegularFile(skin.resolve("info.asm")))
+            throw new IllegalArgumentException("V 皮肤目录缺少 info.asm: " + skin);
         CountDownLatch done = new CountDownLatch(1);
         AtomicReference<Throwable> failure = new AtomicReference<>();
         Platform.startup(() -> {
@@ -36,7 +40,7 @@ final class StudioUiSnapshot {
                         "resources/baseExpansionPack/color/studio.css");
                 Stage stage = new Stage();
                 stage.setScene(scene);
-                workspace.open(skin);
+                if (!startPage) workspace.open(skin);
                 workspace.applyCss();
                 workspace.layout();
                 WritableImage snapshot = scene.snapshot(null);
@@ -65,5 +69,9 @@ final class StudioUiSnapshot {
         }
         Platform.exit();
         if (failure.get() != null) throw new IllegalStateException("工作区截图失败", failure.get());
+    }
+
+    private static Path pathArgument(String argument) {
+        return argument.startsWith("file:") ? Path.of(URI.create(argument)) : Path.of(argument);
     }
 }

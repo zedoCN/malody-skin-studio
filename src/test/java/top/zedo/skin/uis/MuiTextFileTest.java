@@ -41,4 +41,20 @@ class MuiTextFileTest {
 
         assertEquals("@version 4.3.7\r\n_image\r\n  pos=3,4\r\n", Files.readString(path));
     }
+
+    @Test
+    void rejectsExternalChangesWithoutOverwritingThem() throws IOException {
+        Path path = directory.resolve("skin.mui");
+        Files.writeString(path, "@unit 720\n");
+        MuiTextFile.Decoded source = MuiTextFile.read(path);
+
+        source.writeEditorText(path, "@unit 800\n");
+        assertEquals("@unit 800\n", Files.readString(path));
+        Files.writeString(path, "@unit 900\n");
+
+        IOException error = assertThrows(IOException.class,
+                () -> source.writeEditorText(path, "@unit 1000\n"));
+        assertTrue(error.getMessage().contains("外部修改"));
+        assertEquals("@unit 900\n", Files.readString(path));
+    }
 }
