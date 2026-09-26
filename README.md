@@ -30,9 +30,12 @@ Windows 使用 `mvnw.cmd`。首次运行会下载 Maven 和 JavaFX 依赖。应�
 ```sh
 ./mvnw javafx:run '-Djavafx.args=--snapshot examples/基本.mui target/debug/basic-0.png 0 PC'
 ./mvnw javafx:run '-Djavafx.args=--trace-mui examples/基本.mui target/debug/basic-0.json 0 PC'
+./mvnw javafx:run '-Djavafx.args=--snapshot-v /path/to/skin.msp target/debug/v-layer1.png 1 android 1920x1080'
 ```
 
-最后两个参数可省略，默认是 `0` 毫秒和 `PC`。设备比例可填 `PC`、`PHONE`、`PHONE_LONG`、`IPAD` 等 `ResolutionInfo` 枚举名；对照 Android 真机时可填 `ANDROID:2376x1152`，直接输出该像素尺寸。截图写入指定 PNG 路径；`--trace-mui` 将同一帧有效组件的渲染器、坐标、原始属性和源文件行号写为 JSON，便于对照原生实现。解析和资源告警仍输出在终端及 `latest.log`。这些入口不启动编辑器窗口。
+`--snapshot` 和 `--trace-mui` 的最后两个参数可省略，默认是 `0` 毫秒和 `PC`。设备比例可填 `PC`、`PHONE`、`PHONE_LONG`、`IPAD` 等 `ResolutionInfo` 枚举名；对照 Android 真机时可填 `ANDROID:2376x1152`，直接输出该像素尺寸。截图写入指定 PNG 路径；`--trace-mui` 将同一帧有效组件的渲染器、坐标、原始属性和源文件行号写为 JSON，便于对照原生实现。解析和资源告警仍输出在终端及 `latest.log`。这些入口不启动编辑器窗口。
+
+`--snapshot-v` 接受 `.msp`、皮肤目录或目录内的 `info.asm`；图层必须显式指定为全屏背景 `1` 或顶层 `4`，平台为 `windows`、`ios`、`android`，尺寸为输出及场景条件使用的 `宽x高`。路径包含空格时可传 `file:` URI，例如 `file:///Users/me/Downloads/skin%20copy.msp`。输出 PNG 背景透明，与 V 编辑器“布局概览”共用静态图片筛选、排序、资源读取和布局；终端会报告跳过数量。Lua、动画、动态条件和赛道层未包含，PNG 不能代表游戏完整运行画面。Unity 运行画面的对照条件见 [V 运行画面对照](docs/v-runtime-compare.md)。
 
 批量检查 `.mui` 文件能否读取，以及查看 V 皮肤的元数据与组件：
 

@@ -28,6 +28,7 @@ import top.zedo.skin.uis.MszWorkspace;
 import top.zedo.skin.uis.component.ImageComponentRenderer;
 import top.zedo.skin.v.MspInspector;
 import top.zedo.skin.v.VEditorPane;
+import top.zedo.skin.v.VSkinSnapshot;
 import top.zedo.zxncore.ZXLogger;
 import top.zedo.zxncore.ZXVersion;
 
@@ -352,6 +353,10 @@ public class UISEditor extends HBox {
     };*/
 
     public static void main(String[] args) {
+        if (args.length > 0 && args[0].equals("--snapshot-v")) {
+            VSkinSnapshot.run(args);
+            return;
+        }
         if (args.length > 0 && args[0].equals("--snapshot")) {
             SkinSnapshot.run(args);
             return;

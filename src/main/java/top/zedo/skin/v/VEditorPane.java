@@ -22,7 +22,6 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.shape.Rectangle;
-import javafx.scene.transform.Rotate;
 import javafx.stage.Stage;
 import javafx.util.StringConverter;
 import top.zedo.skin.v.proto.SkinVProto.SkinFile;
@@ -30,10 +29,6 @@ import top.zedo.skin.v.proto.SkinVProto.SkinFile;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Optional;
 
 /** Module and metadata editor for a Malody V skin. */
@@ -254,97 +249,58 @@ public final class VEditorPane extends BorderPane {
         VSceneLayout.Platform platform = scenePlatform.getValue();
         VSceneLayout.SceneContext context = VSceneLayout.REFERENCE.withPlatform(
                 platform == null ? VSceneLayout.Platform.WINDOWS : platform);
-        ArrayList<Integer> indices = new ArrayList<>();
-        for (int i = 0; i < draft.moduleCount(); i++) {
-            if (draft.module(i).getParam().getLayer() == layer) indices.add(i);
-        }
-        indices.sort(Comparator.comparingInt((Integer i) -> draft.module(i).getParam().getOrder())
-                .thenComparingInt(i -> i));
-        Map<String, Image> images = new HashMap<>();
-        int shown = 0, unsupported = 0, sceneMismatch = 0, sceneUnknown = 0, missing = 0, capped = 0;
-        for (int index : indices) {
-            SkinFile.Module module = draft.module(index);
-            if (!VSceneLayout.isStaticImage(module)) { unsupported++; continue; }
-            VSceneLayout.SceneMatch match = VSceneLayout.sceneMatch(module, context);
-            if (match == VSceneLayout.SceneMatch.MISMATCH) { sceneMismatch++; continue; }
-            if (match == VSceneLayout.SceneMatch.UNKNOWN) { sceneUnknown++; continue; }
-            if (shown >= 80) { capped++; continue; }
-            String filename = module.getImage().getFile();
-            Image image = images.get(filename);
-            if (image == null) {
+        VScenePlan plan = VScenePlan.build(document, draft.skin(), layer, context, 640, 360);
+        for (VScenePlan.Item item : plan.items()) {
+            int index = item.index();
+            SkinFile.Module module = item.module();
+            ImageView node = VScenePlan.imageView(item);
+            node.setCursor(Cursor.MOVE);
+            node.setPickOnBounds(true);
+            double[] drag = new double[4];
+            boolean[] dragging = {false};
+            node.setOnMousePressed(event -> {
+                if (!applyModule()) return;
+                modules.getSelectionModel().select(index);
+                if (!draft.module(index).equals(module)) { refreshScene(); return; }
+                drag[0] = event.getSceneX();
+                drag[1] = event.getSceneY();
+                drag[2] = node.getLayoutX();
+                drag[3] = node.getLayoutY();
+                dragging[0] = true;
+                event.consume();
+            });
+            node.setOnMouseDragged(event -> {
+                if (!dragging[0]) return;
+                node.setLayoutX(drag[2] + event.getSceneX() - drag[0]);
+                node.setLayoutY(drag[3] + event.getSceneY() - drag[1]);
+                event.consume();
+            });
+            node.setOnMouseReleased(event -> {
+                if (!dragging[0]) return;
+                dragging[0] = false;
+                double deltaX = event.getSceneX() - drag[0];
+                double deltaY = event.getSceneY() - drag[1];
+                if (Math.abs(deltaX) < .5 && Math.abs(deltaY) < .5) {
+                    node.setLayoutX(drag[2]);
+                    node.setLayoutY(drag[3]);
+                    return;
+                }
+                String failure = null;
                 try {
-                    byte[] data = document.resource(filename);
-                    if (data == null) { missing++; continue; }
-                    image = new Image(new ByteArrayInputStream(data));
-                    if (image.isError()) { missing++; continue; }
-                    images.put(filename, image);
-                } catch (IOException error) { missing++; continue; }
-            }
-            try {
-                VSceneLayout.Placement at = VSceneLayout.project(module, context, 640, 360,
-                        image.getWidth(), image.getHeight());
-                ImageView node = new ImageView(image);
-                node.setFitWidth(at.width());
-                node.setFitHeight(at.height());
-                node.setPreserveRatio(false);
-                node.setLayoutX(at.left());
-                node.setLayoutY(at.top());
-                node.setOpacity(at.opacity());
-                node.getTransforms().add(new Rotate(-at.rotate(),
-                        at.width() * at.pivotX(), at.height() * (1 - at.pivotY())));
-                node.setCursor(Cursor.MOVE);
-                node.setPickOnBounds(true);
-                double[] drag = new double[4];
-                boolean[] dragging = {false};
-                node.setOnMousePressed(event -> {
-                    if (!applyModule()) return;
-                    modules.getSelectionModel().select(index);
-                    if (!draft.module(index).equals(module)) { refreshScene(); return; }
-                    drag[0] = event.getSceneX();
-                    drag[1] = event.getSceneY();
-                    drag[2] = node.getLayoutX();
-                    drag[3] = node.getLayoutY();
-                    dragging[0] = true;
-                    event.consume();
-                });
-                node.setOnMouseDragged(event -> {
-                    if (!dragging[0]) return;
-                    node.setLayoutX(drag[2] + event.getSceneX() - drag[0]);
-                    node.setLayoutY(drag[3] + event.getSceneY() - drag[1]);
-                    event.consume();
-                });
-                node.setOnMouseReleased(event -> {
-                    if (!dragging[0]) return;
-                    dragging[0] = false;
-                    double deltaX = event.getSceneX() - drag[0];
-                    double deltaY = event.getSceneY() - drag[1];
-                    if (Math.abs(deltaX) < .5 && Math.abs(deltaY) < .5) {
-                        node.setLayoutX(drag[2]);
-                        node.setLayoutY(drag[3]);
-                        return;
-                    }
-                    String failure = null;
-                    try {
-                        VSceneLayout.Offsets offsets = VSceneLayout.movedOffsets(draft.module(index), context,
-                                640, 360, deltaX, deltaY);
-                        draft.updateModule(index, draft.fields(index).withOffsets(offsets.dx(), offsets.dy()));
-                        if (currentModule == index) showModule(index);
-                    } catch (IllegalArgumentException error) {
-                        failure = error.getMessage();
-                    }
-                    refreshScene();
-                    if (failure != null) sceneStatus.setText("拖动失败：" + failure);
-                    event.consume();
-                });
-                sceneCanvas.getChildren().add(node);
-                shown++;
-            } catch (IllegalArgumentException error) { unsupported++; }
+                    VSceneLayout.Offsets offsets = VSceneLayout.movedOffsets(draft.module(index), context,
+                            640, 360, deltaX, deltaY);
+                    draft.updateModule(index, draft.fields(index).withOffsets(offsets.dx(), offsets.dy()));
+                    if (currentModule == index) showModule(index);
+                } catch (IllegalArgumentException error) {
+                    failure = error.getMessage();
+                }
+                refreshScene();
+                if (failure != null) sceneStatus.setText("拖动失败：" + failure);
+                event.consume();
+            });
+            sceneCanvas.getChildren().add(node);
         }
-        sceneStatus.setText("当前层 " + indices.size() + " 个模块；显示 " + shown + " 个静态图片，"
-                + "跳过 " + unsupported + " 个动态/特殊模块，"
-                + sceneMismatch + " 个场景条件不匹配，" + sceneUnknown + " 个条件无法静态判定，"
-                + "资源缺失或无法解码 " + missing + " 个。"
-                + (capped > 0 ? "另有 " + capped + " 个超过 80 张显示上限。" : ""));
+        sceneStatus.setText(plan.status());
     }
 
     private void refreshPreview(SkinFile.Module module) {
