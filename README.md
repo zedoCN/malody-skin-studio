@@ -4,7 +4,7 @@
 
 外层标签中的「4.x · UIS」工作区保留各 `.mui`／`.msz` 脚本标签及共享画布；每份 V 皮肤占一个独立标签。切换格式不会改变各自的预览和保存语义。
 
-`.mui` 文本编辑会自动保存，也可点击“保存”或按系统保存快捷键；关闭时若保存失败会提示并保留窗口。保存成功但预览解析失败时，工具栏会单独提示。画布可拖动未旋转、未倾斜、未受动画或透视影响的普通图片组件，包括像素坐标锚点；写回时核对其真实来源文件、组件段和属性行，包含 `@include` 中的属性。组合段和父组件位置暂不参与拖拽。V 布局概览可拖动全屏背景／顶层中可投影的静态图片，改动组件偏移量后用自己的“保存皮肤”按钮写回；关闭 V 标签或主窗口时会提示未保存的修改。两种格式分别保留源文件中未被编辑的内容：`.mui` 的原文 section、注释、编码和行尾，以及 `.msp` 的未知 protobuf 字段和素材。
+`.mui` 文本编辑会自动保存，也可点击“保存”或按系统保存快捷键；工具栏显示自动保存中、已保存或失败，失败的脚本标签会显示警示标记，悬停状态可查看错误。关闭时若保存失败会提示并保留窗口。保存成功但预览解析失败时，工具栏会单独提示。画布可拖动未旋转、未倾斜、未受动画或透视影响的普通图片组件，包括像素坐标锚点；写回时核对其真实来源文件、组件段和属性行，包含 `@include` 中的属性。组合段和父组件位置暂不参与拖拽。V 布局概览可拖动全屏背景／顶层中可投影的静态图片，改动组件偏移量后用自己的“保存皮肤”按钮写回；关闭 V 标签或主窗口时会提示未保存的修改。两种格式分别保留源文件中未被编辑的内容：`.mui` 的原文 section、注释、编码和行尾，以及 `.msp` 的未知 protobuf 字段和素材。
 
 可直接打开 4.3.7 `.msz` 包。包有多个 `.mui` 时先选择一个脚本；编辑器把包安全展开到临时目录，供预览加载引用脚本和素材。所选脚本的文本编辑与画布拖拽会写回原 `.msz`；其他资源只用于预览。包在外部被修改时保存会报冲突，未写回内容保留在报错所示临时路径；关闭标签页或应用时若仍有同步错误，会阻止关闭。
 
@@ -33,11 +33,14 @@ Windows 使用 `mvnw.cmd`。首次运行会下载 Maven 和 JavaFX 依赖。应�
 ./mvnw javafx:run '-Djavafx.args=--snapshot examples/基本.mui target/debug/basic-0.png 0 PC'
 ./mvnw javafx:run '-Djavafx.args=--trace-mui examples/基本.mui target/debug/basic-0.json 0 PC'
 ./mvnw javafx:run '-Djavafx.args=--snapshot-v /path/to/skin.msp target/debug/v-layer1.png 1 android 1920x1080'
+./mvnw javafx:run '-Djavafx.args=--snapshot-ui examples/基本.mui target/debug/studio-ui.png'
 ```
 
 `--snapshot` 和 `--trace-mui` 的最后两个参数可省略，默认是 `0` 毫秒和 `PC`。设备比例可填 `PC`、`PHONE`、`PHONE_LONG`、`IPAD` 等 `ResolutionInfo` 枚举名；对照 Android 真机时可填 `ANDROID:2376x1152`，直接输出该像素尺寸。截图写入指定 PNG 路径；`--trace-mui` 将同一帧有效组件的渲染器、坐标、原始属性和源文件行号写为 JSON，便于对照原生实现。解析和资源告警仍输出在终端及 `latest.log`。这些入口不启动编辑器窗口。
 
 `--snapshot-v` 接受 `.msp`、皮肤目录或目录内的 `info.asm`；图层必须显式指定为全屏背景 `1` 或顶层 `4`，平台为 `windows`、`ios`、`android`，尺寸为输出及场景条件使用的 `宽x高`。路径包含空格时可传 `file:` URI，例如 `file:///Users/me/Downloads/skin%20copy.msp`。输出 PNG 背景透明，与 V 编辑器“布局概览”共用静态图片筛选、排序、资源读取和布局；终端会报告跳过数量。Lua、动画、动态条件和赛道层未包含，PNG 不能代表游戏完整运行画面。Unity 运行画面的对照条件见 [V 运行画面对照](docs/v-runtime-compare.md)。
+
+`--snapshot-ui` 以固定 1440×900 尺寸导出完整工作区，适合检查 `.mui` 和 `.msp` 的编辑界面排版与样式；它不会修改皮肤文件。路径含空格时可用 `file:` URI。
 
 批量检查 `.mui` 文件能否读取，以及查看 V 皮肤的元数据与组件：
 

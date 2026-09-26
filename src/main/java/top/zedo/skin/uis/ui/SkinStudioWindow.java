@@ -27,8 +27,10 @@ final class SkinStudioWindow extends BorderPane {
 
     SkinStudioWindow(UISEditor muiEditor) {
         this.muiEditor = muiEditor;
+        getStyleClass().add("skin-studio-window");
         muiTab = new Tab("4.x · UIS", muiEditor);
         muiTab.setClosable(false);
+        documents.getStyleClass().add("studio-documents");
         documents.getTabs().add(muiTab);
         setCenter(documents);
 

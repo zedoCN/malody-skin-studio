@@ -47,6 +47,7 @@ public class UISEditor extends HBox {
     private Runnable openFileRequest;
     private Consumer<Path> vOpenRequest;
     Label previewStatus = new Label();
+    private final Label saveStatus = new Label();
     UISCanvas uisCanvas = new UISCanvas() {
         {
             setBorder(new Border(new BorderStroke(Color.WHITE, BorderStrokeStyle.SOLID, CornerRadii.EMPTY, new BorderWidths(1), new Insets(0))));
@@ -58,6 +59,7 @@ public class UISEditor extends HBox {
                 if (newValue != null)
                     if (newValue.getContent() instanceof VirtualizedScrollPane code) {
                         if (code.getContent() instanceof UISCodeArea codeArea) {
+                            showSaveStatus(codeArea);
                             try {
                                 uisCanvas.loadSkin(codeArea.getFile());
                                 previewValid = true;
@@ -181,13 +183,20 @@ public class UISEditor extends HBox {
     /**
      * 顶部工具栏
      */
-    HBox topToolbar = new HBox(resolutionChoiceBox, deviceTypeChoiceBox, unitChoiceBox, scalingFactorLabel, scalingFactorSlider, openFileButton, saveFileButton, previewStatus) {
+    HBox topToolbar = new HBox(resolutionChoiceBox, deviceTypeChoiceBox, unitChoiceBox, scalingFactorLabel, scalingFactorSlider, openFileButton, saveFileButton) {
         {
             setMinHeight(40);
             setBorder(new Border(new BorderStroke(Color.WHITE, BorderStrokeStyle.SOLID, CornerRadii.EMPTY, new BorderWidths(0, 0, 1, 0), new Insets(0))));
             setAlignment(Pos.CENTER_LEFT);
             setSpacing(8);
             setPadding(new Insets(0, 8, 0, 8));
+        }
+    };
+    HBox feedbackBar = new HBox(12, saveStatus, previewStatus) {
+        {
+            setMinHeight(26);
+            setAlignment(Pos.CENTER_LEFT);
+            setPadding(new Insets(2, 8, 2, 8));
         }
     };
     CheckBox autoReplayCheckBox = new CheckBox("自动重播") {
@@ -251,7 +260,7 @@ public class UISEditor extends HBox {
             setPadding(new Insets(0, 8, 0, 8));
         }
     };
-    VBox sideVBox = new VBox(topToolbar, tabPane, bottomToolbar) {
+    VBox sideVBox = new VBox(topToolbar, feedbackBar, tabPane, bottomToolbar) {
         {
             setHgrow(this, Priority.ALWAYS);
             setPrefWidth(260);
@@ -261,8 +270,12 @@ public class UISEditor extends HBox {
     };
 
     public UISEditor() {
-
-
+        getStyleClass().add("mui-editor");
+        sideVBox.getStyleClass().add("mui-sidebar");
+        topToolbar.getStyleClass().add("mui-toolbar");
+        feedbackBar.getStyleClass().add("mui-feedback");
+        bottomToolbar.getStyleClass().add("mui-toolbar");
+        tabPane.getStyleClass().add("mui-tabs");
         setAlignment(Pos.CENTER_LEFT);
         uisCanvas.addEventFilter(MouseEvent.MOUSE_PRESSED, this::beginPositionDrag);
         uisCanvas.addEventFilter(MouseEvent.MOUSE_DRAGGED, this::previewPositionDrag);
@@ -329,6 +342,10 @@ public class UISEditor extends HBox {
     };*/
 
     public static void main(String[] args) {
+        if (args.length > 0 && args[0].equals("--snapshot-ui")) {
+            StudioUiSnapshot.run(args);
+            return;
+        }
         if (args.length > 0 && args[0].equals("--snapshot-v")) {
             VSkinSnapshot.run(args);
             return;
@@ -399,6 +416,7 @@ public class UISEditor extends HBox {
             scene.getAccelerators().put(KeyCombination.keyCombination("Shortcut+S"), workspace::saveActive);
             scene.getStylesheets().addAll("resources/baseExpansionPack/color/style.css");
             scene.getStylesheets().addAll("resources/baseExpansionPack/color/dark.css");
+            scene.getStylesheets().addAll("resources/baseExpansionPack/color/studio.css");
             Stage stage = new Stage();
             stage.setScene(scene);
             stage.setTitle("Malody Skin Studio " + VERSION);
@@ -471,10 +489,12 @@ public class UISEditor extends HBox {
                 }
             }
         }
-        for (MszWorkspace workspace : packageTabs.values()) {
+        for (Map.Entry<Tab, MszWorkspace> entry : packageTabs.entrySet()) {
             try {
-                workspace.syncPending();
+                entry.getValue().syncPending();
             } catch (IOException error) {
+                UISCodeArea codeArea = codeArea(entry.getKey());
+                if (codeArea != null) codeArea.markSaveFailed(error);
                 new Alert(Alert.AlertType.ERROR, "无法同步 MSZ: " + error.getMessage()).showAndWait();
                 return false;
             }
@@ -554,6 +574,10 @@ public class UISEditor extends HBox {
             }
             refreshPreview(true);
         });
+        uisCodeArea.setSaveStatusListener((state, error) -> {
+            tab.setText(state == UISCodeArea.SaveState.FAILED ? "⚠ " + title : title);
+            if (tabPane.getSelectionModel().getSelectedItem() == tab) showSaveStatus(uisCodeArea);
+        });
         uisCodeArea.setAutoHeight(true);
         uisCodeArea.setAutoScrollOnDragDesired(true);
         VirtualizedScrollPane<UISCodeArea> vsPane = new VirtualizedScrollPane<>(uisCodeArea);
@@ -587,9 +611,25 @@ public class UISEditor extends HBox {
                 workspace.syncPending();
                 refreshPreview(true);
             }
+            codeArea.markSaveSucceeded();
         } catch (IOException error) {
             showSaveError(codeArea, error);
         }
+    }
+
+    private void showSaveStatus(UISCodeArea codeArea) {
+        UISCodeArea.SaveState state = codeArea.getSaveState();
+        saveStatus.setText(switch (state) {
+            case IDLE -> "自动保存已开启";
+            case SAVING -> "自动保存中…";
+            case SAVED -> "已保存";
+            case FAILED -> "自动保存失败";
+        });
+        IOException error = codeArea.getSaveError();
+        saveStatus.setTooltip(error == null ? null : new Tooltip(error.getMessage()));
+        saveStatus.getStyleClass().removeAll("mui-save-failed", "mui-save-ok");
+        saveStatus.getStyleClass().add(state == UISCodeArea.SaveState.FAILED
+                ? "mui-save-failed" : "mui-save-ok");
     }
 
     private void refreshPreview(boolean saved) {
@@ -707,8 +747,9 @@ public class UISEditor extends HBox {
     }
 
     private static void showSaveError(UISCodeArea codeArea, IOException error) {
+        codeArea.markSaveFailed(error);
         new Alert(Alert.AlertType.ERROR,
-                "无法保存 MUI 文件 " + codeArea.getFile() + ": " + error.getMessage()).showAndWait();
+                "无法保存或同步脚本 " + codeArea.getFile() + ": " + error.getMessage()).showAndWait();
     }
 
     public record UnitInfo(String name, String unit, int id) {

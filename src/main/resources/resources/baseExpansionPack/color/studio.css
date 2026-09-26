@@ -1,0 +1,337 @@
+/* Studio chrome. Keep format-specific canvases and the 4.x code area untouched. */
+.skin-studio-window {
+    -studio-bg: #171d23;
+    -studio-surface: #202830;
+    -studio-raised: #26313a;
+    -studio-field: #192127;
+    -studio-border: #394752;
+    -studio-text: #e7edf0;
+    -studio-muted: #a6b4bd;
+    -studio-accent: #75c8c5;
+    -studio-selection: #294b50;
+    -fx-background-color: -studio-bg;
+}
+
+/* The application menu sits above the document tabs. */
+.skin-studio-window .menu-bar {
+    -fx-background-color: -studio-surface;
+    -fx-border-color: -studio-border;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 3 8 3 8;
+}
+
+.skin-studio-window .menu-bar .menu {
+    -fx-background-radius: 5;
+    -fx-padding: 3 10 3 10;
+}
+
+.skin-studio-window .menu-bar .menu:hover,
+.skin-studio-window .menu-bar .menu:showing {
+    -fx-background-color: -studio-raised;
+}
+
+.skin-studio-window .menu-bar .menu .label {
+    -fx-text-fill: -studio-text;
+}
+
+/* Only the outer document tabs receive the larger navigation treatment. */
+.studio-documents > .tab-header-area .tab-header-background {
+    -fx-background-color: -studio-surface;
+    -fx-border-color: -studio-border;
+    -fx-border-width: 0 0 1 0;
+}
+
+.studio-documents > .tab-header-area .headers-region .tab {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent transparent -studio-border transparent;
+    -fx-border-width: 0 0 2 0;
+    -fx-padding: 8 16 8 16;
+}
+
+.studio-documents > .tab-header-area .headers-region .tab:hover {
+    -fx-background-color: -studio-raised;
+}
+
+.studio-documents > .tab-header-area .headers-region .tab:selected,
+.studio-documents:focused > .tab-header-area .headers-region .tab:selected {
+    -fx-background-color: -studio-bg;
+    -fx-border-color: transparent transparent -studio-accent transparent;
+    -fx-border-width: 0 0 2 0;
+}
+
+.studio-documents > .tab-header-area .headers-region .tab .tab-label {
+    -fx-text-fill: -studio-muted;
+    -fx-font-size: 12px;
+}
+
+.studio-documents > .tab-header-area .headers-region .tab:selected .tab-label {
+    -fx-text-fill: -studio-text;
+    -fx-font-weight: bold;
+}
+
+/* V editor: clear editing zones and legible, consistent form controls. */
+.v-editor {
+    -fx-background-color: -studio-bg;
+}
+
+.v-editor .v-toolbar {
+    -fx-background-color: -studio-surface;
+    -fx-border-color: -studio-border;
+    -fx-border-width: 0 0 1 0;
+}
+
+.v-editor .v-toolbar .label {
+    -fx-text-fill: -studio-text;
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+}
+
+.v-editor .v-toolbar .v-save-status {
+    -fx-text-fill: -studio-muted;
+    -fx-font-size: 12px;
+    -fx-font-weight: normal;
+}
+
+.v-editor .v-toolbar .v-save-status.v-status-saved {
+    -fx-text-fill: #95c8b0;
+}
+
+.v-editor .v-toolbar .v-save-status.v-status-dirty {
+    -fx-text-fill: #e2bd78;
+}
+
+.v-editor .v-toolbar .v-save-status.v-status-error {
+    -fx-text-fill: #e79696;
+}
+
+.v-editor .v-sidebar,
+.v-editor .v-inspector {
+    -fx-background-color: -studio-surface;
+}
+
+.v-editor .v-sidebar {
+    -fx-border-color: -studio-border;
+    -fx-border-width: 0 1 0 0;
+}
+
+.v-editor .v-inspector {
+    -fx-border-color: -studio-border;
+    -fx-border-width: 0 1 0 0;
+}
+
+.v-editor .v-preview-panel,
+.v-editor .v-scene-panel,
+.v-editor .v-lua-panel {
+    -fx-background-color: -studio-bg;
+}
+
+.v-editor .label {
+    -fx-text-fill: -studio-text;
+    -fx-font-size: 12px;
+}
+
+.v-editor .v-section-title {
+    -fx-text-fill: -studio-text;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+
+.v-editor .text-field,
+.v-editor .text-area,
+.v-editor .combo-box,
+.v-editor .list-view {
+    -fx-background-color: -studio-field;
+    -fx-border-color: -studio-border;
+    -fx-border-radius: 5;
+    -fx-background-radius: 5;
+    -fx-text-fill: -studio-text;
+    -fx-prompt-text-fill: -studio-muted;
+    -fx-highlight-fill: -studio-selection;
+    -fx-highlight-text-fill: -studio-text;
+}
+
+.v-editor .text-field,
+.v-editor .combo-box {
+    -fx-min-height: 29px;
+    -fx-padding: 4 8 4 8;
+}
+
+.v-editor .text-area .content,
+.v-editor .text-area .scroll-pane,
+.v-editor .text-area .viewport {
+    -fx-background-color: -studio-field;
+}
+
+.v-editor .text-field:focused,
+.v-editor .text-area:focused,
+.v-editor .combo-box:focused,
+.v-editor .list-view:focused {
+    -fx-border-color: -studio-accent;
+}
+
+.v-editor .text-field:disabled,
+.v-editor .text-area:disabled {
+    -fx-opacity: 0.54;
+}
+
+.v-editor .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: -studio-text;
+    -fx-padding: 7 9 7 9;
+}
+
+.v-editor .list-cell:hover {
+    -fx-background-color: -studio-raised;
+}
+
+.v-editor .list-cell:selected {
+    -fx-background-color: -studio-selection;
+    -fx-text-fill: -studio-text;
+}
+
+.v-editor .button {
+    -fx-background-color: -studio-raised;
+    -fx-border-color: -studio-border;
+    -fx-background-radius: 5;
+    -fx-border-radius: 5;
+    -fx-text-fill: -studio-text;
+    -fx-padding: 5 12 5 12;
+}
+
+.v-editor .button:hover {
+    -fx-background-color: #31424b;
+    -fx-border-color: -studio-accent;
+}
+
+.v-editor .button:armed {
+    -fx-background-color: -studio-selection;
+}
+
+.v-editor .button:focused {
+    -fx-border-color: -studio-accent;
+}
+
+.v-editor .v-toolbar .button {
+    -fx-background-color: #286d70;
+    -fx-border-color: #398c8d;
+    -fx-text-fill: #f4ffff;
+    -fx-font-weight: bold;
+}
+
+.v-editor .v-toolbar .button:hover {
+    -fx-background-color: #328486;
+}
+
+.v-editor .v-preview-tabs .tab-header-area .tab-header-background {
+    -fx-background-color: -studio-surface;
+    -fx-border-color: -studio-border;
+    -fx-border-width: 0 0 1 0;
+}
+
+.v-editor .v-preview-tabs .tab-header-area .headers-region .tab {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent transparent -studio-border transparent;
+    -fx-border-width: 0 0 2 0;
+    -fx-padding: 5 11 5 11;
+}
+
+.v-editor .v-preview-tabs .tab-header-area .headers-region .tab:hover {
+    -fx-background-color: -studio-raised;
+}
+
+.v-editor .v-preview-tabs .tab-header-area .headers-region .tab:selected,
+.v-editor .v-preview-tabs:focused .tab-header-area .headers-region .tab:selected {
+    -fx-background-color: -studio-bg;
+    -fx-border-color: transparent transparent -studio-accent transparent;
+    -fx-border-width: 0 0 2 0;
+}
+
+.v-editor .v-preview-tabs .tab-header-area .headers-region .tab:selected .tab-label {
+    -fx-text-fill: -studio-text;
+}
+
+.v-editor .v-selection-outline {
+    -fx-fill: transparent;
+    -fx-stroke: -studio-accent;
+    -fx-stroke-width: 1.5;
+    -fx-stroke-dash-array: 6 4;
+}
+
+/* 4.x editor controls share the workspace palette; the skin canvas keeps its own colors. */
+.mui-editor .mui-sidebar,
+.mui-editor .mui-toolbar,
+.mui-editor .mui-feedback {
+    -fx-background-color: -studio-surface;
+}
+
+.mui-editor .mui-sidebar {
+    -fx-border-color: -studio-border;
+    -fx-border-width: 0 1 0 0;
+}
+
+.mui-editor .mui-toolbar {
+    -fx-border-color: -studio-border;
+    -fx-border-width: 0 0 1 0;
+}
+
+.mui-editor .mui-feedback {
+    -fx-border-color: -studio-border;
+    -fx-border-width: 0 0 1 0;
+}
+
+.mui-editor .mui-feedback .label {
+    -fx-text-fill: -studio-muted;
+    -fx-font-size: 11px;
+}
+
+.mui-editor .mui-feedback .mui-save-ok {
+    -fx-text-fill: #95c8b0;
+}
+
+.mui-editor .mui-feedback .mui-save-failed {
+    -fx-text-fill: #e79696;
+}
+
+.mui-editor .mui-toolbar .label,
+.mui-editor .mui-toolbar .check-box {
+    -fx-text-fill: -studio-muted;
+}
+
+.mui-editor .mui-toolbar .button,
+.mui-editor .mui-toolbar .choice-box {
+    -fx-background-color: -studio-raised;
+    -fx-border-color: -studio-border;
+    -fx-background-radius: 5;
+    -fx-border-radius: 5;
+    -fx-text-fill: -studio-text;
+}
+
+.mui-editor .mui-toolbar .button:hover,
+.mui-editor .mui-toolbar .choice-box:hover {
+    -fx-border-color: -studio-accent;
+    -fx-background-color: #31424b;
+}
+
+.mui-editor .mui-toolbar .choice-box .label {
+    -fx-text-fill: -studio-text;
+}
+
+.mui-editor .mui-tabs > .tab-header-area .tab-header-background {
+    -fx-background-color: -studio-raised;
+}
+
+.mui-editor .mui-tabs > .tab-header-area .headers-region .tab {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent transparent -studio-border transparent;
+    -fx-border-width: 0 0 2 0;
+    -fx-padding: 5 12 5 12;
+}
+
+.mui-editor .mui-tabs > .tab-header-area .headers-region .tab:selected {
+    -fx-background-color: -studio-surface;
+    -fx-border-color: transparent transparent -studio-accent transparent;
+}
+
+.mui-editor .mui-tabs > .tab-header-area .headers-region .tab:selected .tab-label {
+    -fx-text-fill: -studio-text;
+}

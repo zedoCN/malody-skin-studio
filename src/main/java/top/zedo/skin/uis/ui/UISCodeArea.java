@@ -58,6 +58,9 @@ public class UISCodeArea extends CodeArea {
     private final SaveHandler saved;
     private boolean dirty;
     private boolean disposed;
+    private SaveState saveState = SaveState.IDLE;
+    private IOException saveError;
+    private SaveStatusListener saveStatusListener = (_, _) -> {};
 
     {
 
@@ -86,6 +89,7 @@ public class UISCodeArea extends CodeArea {
         });
         textProperty().addListener((observable, oldText, newText) -> {
             dirty = true;
+            reportSaveStatus(SaveState.SAVING, null);
             autoSave.playFromStart();
         });
     }
@@ -98,6 +102,32 @@ public class UISCodeArea extends CodeArea {
     @FunctionalInterface
     public interface SaveHandler {
         void saved() throws IOException;
+    }
+
+    public enum SaveState { IDLE, SAVING, SAVED, FAILED }
+
+    @FunctionalInterface
+    public interface SaveStatusListener {
+        void changed(SaveState state, IOException error);
+    }
+
+    public void setSaveStatusListener(SaveStatusListener listener) {
+        saveStatusListener = listener;
+        listener.changed(saveState, saveError);
+    }
+
+    public SaveState getSaveState() { return saveState; }
+
+    public IOException getSaveError() { return saveError; }
+
+    void markSaveSucceeded() { reportSaveStatus(SaveState.SAVED, null); }
+
+    void markSaveFailed(IOException error) { reportSaveStatus(SaveState.FAILED, error); }
+
+    private void reportSaveStatus(SaveState state, IOException error) {
+        saveState = state;
+        saveError = error;
+        saveStatusListener.changed(state, error);
     }
 
     public UISCodeArea(Path file, SaveHandler saved) throws IOException {
@@ -156,9 +186,16 @@ public class UISCodeArea extends CodeArea {
     public void saveNow() throws IOException {
         autoSave.stop();
         if (!dirty) return;
-        source.writeEditorText(file, getText());
-        saved.saved();
-        dirty = false;
+        reportSaveStatus(SaveState.SAVING, null);
+        try {
+            source.writeEditorText(file, getText());
+            saved.saved();
+            dirty = false;
+            reportSaveStatus(SaveState.SAVED, null);
+        } catch (IOException error) {
+            reportSaveStatus(SaveState.FAILED, error);
+            throw error;
+        }
     }
 
     private Task<StyleSpans<Collection<String>>> computeHighlightingAsync() {

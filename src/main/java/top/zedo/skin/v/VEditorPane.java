@@ -1,5 +1,6 @@
 package top.zedo.skin.v;
 
+import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
@@ -10,6 +11,7 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextArea;
@@ -28,6 +30,8 @@ import top.zedo.skin.v.proto.SkinVProto.SkinFile;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
 /** Module and metadata editor for a Malody V skin. */
@@ -35,7 +39,10 @@ public final class VEditorPane extends BorderPane {
     private final MspSkinDocument document;
     private final VSkinEditModel draft;
     private final Label heading;
+    private final Label saveStatus = new Label("已保存");
     private final ListView<String> modules = new ListView<>();
+    private final TextField moduleSearch = new TextField();
+    private final Label moduleSearchStatus = new Label();
     private final TextField title = new TextField();
     private final TextField creator = new TextField();
     private final TextArea description = new TextArea();
@@ -57,47 +64,68 @@ public final class VEditorPane extends BorderPane {
     private final Label previewStatus = new Label();
     private final ImageView preview = new ImageView();
     private final Pane sceneCanvas = new Pane();
+    private final Map<Integer, ImageView> sceneNodes = new HashMap<>();
+    private final Rectangle selectedOutline = new Rectangle();
     private final ComboBox<Integer> sceneLayer = new ComboBox<>();
     private final ComboBox<VSceneLayout.Platform> scenePlatform = new ComboBox<>();
     private final Label sceneStatus = new Label();
     private final VRuntimeComparePane runtimeCompare;
     private int currentModule = -1;
     private boolean changingSelection;
+    private boolean updatingFields;
 
     public VEditorPane(Path path) throws IOException {
+        getStyleClass().add("v-editor");
         document = MspSkinDocument.open(path);
         draft = new VSkinEditModel(document.skin());
         runtimeCompare = new VRuntimeComparePane(document);
 
         heading = new Label("Malody V · " + document.path().getFileName());
+        heading.setMaxWidth(Double.MAX_VALUE);
         Button save = new Button("保存皮肤");
         save.setOnAction(_ -> save());
-        HBox toolbar = new HBox(12, heading, save);
+        save.getStyleClass().add("v-primary-action");
+        saveStatus.getStyleClass().addAll("v-save-status", "v-status-saved");
+        HBox toolbar = new HBox(12, heading, saveStatus, save);
+        toolbar.getStyleClass().add("v-toolbar");
         toolbar.setAlignment(Pos.CENTER_LEFT);
         toolbar.setPadding(new Insets(10));
+        HBox.setHgrow(heading, Priority.ALWAYS);
         setTop(toolbar);
 
-        VBox metadata = new VBox(7,
-                new Label("皮肤信息"), row("标题", title), row("作者", creator), new Label("描述"), description,
-                row("封面资源", cover), new Label("组件 (" + draft.moduleCount() + ")"), modules);
-        metadata.setPadding(new Insets(12));
-        metadata.setPrefWidth(360);
-        description.setPrefRowCount(3);
+        Label moduleHeading = sectionTitle("组件 · " + draft.moduleCount());
+        moduleSearch.setPromptText("名称或资源名，回车定位");
+        moduleSearch.setOnAction(_ -> locateModule());
+        moduleSearchStatus.setText("选择组件后在画布上查看位置与属性");
+        moduleSearchStatus.setWrapText(true);
+        VBox navigator = new VBox(10, moduleHeading, moduleSearch, moduleSearchStatus, modules);
+        navigator.getStyleClass().add("v-sidebar");
+        navigator.setPadding(new Insets(12));
+        navigator.setPrefWidth(270);
+        navigator.setMinWidth(220);
         VBox.setVgrow(modules, Priority.ALWAYS);
-        setLeft(metadata);
 
-        VBox properties = new VBox(8, new Label("组件属性"), moduleKind, row("名称", name), row("资源 / 文字", resource),
+        VBox metadata = new VBox(10, sectionTitle("皮肤信息"), row("标题", title), row("作者", creator),
+                new Label("描述"), description, row("封面资源", cover));
+        metadata.setPadding(new Insets(12));
+        description.setPrefRowCount(3);
+
+        VBox properties = new VBox(8, sectionTitle("组件属性"), moduleKind, row("名称", name), row("资源 / 文字", resource),
                 row("X", x), row("Y", y), row("偏移 X", dx), row("偏移 Y", dy),
                 row("宽度", width), row("高度", height), row("透明度", alpha), row("旋转", rotate));
+        properties.getStyleClass().add("v-inspector");
         properties.setPadding(new Insets(12));
-        properties.setPrefWidth(330);
+        properties.setPrefWidth(300);
         ScrollPane propertyScroll = new ScrollPane(properties);
         propertyScroll.setFitToWidth(true);
+        propertyScroll.setPrefWidth(315);
+        propertyScroll.setMinWidth(255);
 
         preview.setPreserveRatio(true);
         preview.setFitWidth(440);
         preview.setFitHeight(500);
-        VBox imageBox = new VBox(10, new Label("选中组件资源预览"), preview, previewStatus);
+        VBox imageBox = new VBox(10, sectionTitle("选中组件资源"), preview, previewStatus);
+        imageBox.getStyleClass().add("v-preview-panel");
         imageBox.setAlignment(Pos.TOP_CENTER);
         imageBox.setPadding(new Insets(12));
         sceneCanvas.setPrefSize(640, 360);
@@ -105,6 +133,8 @@ public final class VEditorPane extends BorderPane {
         sceneCanvas.setMaxSize(640, 360);
         sceneCanvas.setClip(new Rectangle(640, 360));
         sceneCanvas.setStyle("-fx-background-color: #20232a;");
+        selectedOutline.getStyleClass().add("v-selection-outline");
+        selectedOutline.setMouseTransparent(true);
         scenePlatform.getItems().setAll(VSceneLayout.Platform.values());
         scenePlatform.getSelectionModel().select(VSceneLayout.Platform.WINDOWS);
         scenePlatform.setOnAction(_ -> refreshScene());
@@ -143,9 +173,11 @@ public final class VEditorPane extends BorderPane {
         HBox sceneTools = new HBox(8, new Label("图层"), sceneLayer,
                 new Label("平台"), scenePlatform, refreshScene);
         sceneTools.setAlignment(Pos.CENTER_LEFT);
-        VBox sceneBox = new VBox(10, new Label("原始参数布局概览 · 参考视口 1920×1080 · 不执行 Lua"), sceneTools,
+        VBox sceneBox = new VBox(10, sectionTitle("布局概览"),
+                new Label("原始参数 · 参考视口 1920×1080 · 不执行 Lua"), sceneTools,
                 new ScrollPane(sceneCanvas), sceneStatus,
                 new Label("可拖动图片调整偏移量，点击“保存皮肤”写回。Lua 仍可能在游戏中改写这些图片。"));
+        sceneBox.getStyleClass().add("v-scene-panel");
         sceneBox.setPadding(new Insets(12));
         Tab resourceTab = new Tab("单资源", imageBox);
         Tab sceneTab = new Tab("布局概览", sceneBox);
@@ -157,19 +189,24 @@ public final class VEditorPane extends BorderPane {
         luaSource.setWrapText(false);
         luaSource.setStyle("-fx-font-family: monospace;");
         luaStatus.setText(luaBaseline.diagnostic());
-        VBox luaBox = new VBox(8, luaPath, luaStatus, luaSource);
+        VBox luaBox = new VBox(8, sectionTitle("Lua 源码"), luaPath, luaStatus, luaSource);
+        luaBox.getStyleClass().add("v-lua-panel");
         luaBox.setPadding(new Insets(12));
         VBox.setVgrow(luaSource, Priority.ALWAYS);
         Tab luaTab = new Tab("Lua 源码", luaBox);
         Tab runtimeTab = new Tab("运行态对照", runtimeCompare);
+        Tab metadataTab = new Tab("皮肤信息", metadata);
         resourceTab.setClosable(false);
         sceneTab.setClosable(false);
         luaTab.setClosable(false);
         runtimeTab.setClosable(false);
-        TabPane previews = new TabPane(resourceTab, sceneTab, luaTab, runtimeTab);
-        HBox content = new HBox(propertyScroll, previews);
-        HBox.setHgrow(previews, Priority.ALWAYS);
-        setCenter(content);
+        metadataTab.setClosable(false);
+        TabPane previews = new TabPane(sceneTab, resourceTab, luaTab, runtimeTab, metadataTab);
+        previews.getStyleClass().add("v-preview-tabs");
+        previews.getSelectionModel().select(sceneTab);
+        SplitPane workspace = new SplitPane(navigator, previews, propertyScroll);
+        workspace.setDividerPositions(0.21, 0.75);
+        setCenter(workspace);
 
         title.setText(draft.metadata().getTitle());
         creator.setText(draft.metadata().getCreator());
@@ -190,6 +227,7 @@ public final class VEditorPane extends BorderPane {
         });
         if (!modules.getItems().isEmpty()) modules.getSelectionModel().selectFirst();
         refreshScene();
+        watchEdits();
     }
 
     private static HBox row(String label, TextField field) {
@@ -199,6 +237,61 @@ public final class VEditorPane extends BorderPane {
         row.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(field, Priority.ALWAYS);
         return row;
+    }
+
+    private static Label sectionTitle(String title) {
+        Label label = new Label(title);
+        label.getStyleClass().add("v-section-title");
+        return label;
+    }
+
+    private void watchEdits() {
+        for (TextField field : new TextField[]{title, creator, cover, name, resource,
+                x, y, dx, dy, width, height, alpha, rotate}) {
+            field.textProperty().addListener((_, _, _) -> markDirty());
+        }
+        description.textProperty().addListener((_, _, _) -> markDirty());
+        luaSource.textProperty().addListener((_, _, _) -> markDirty());
+    }
+
+    private void markDirty() {
+        if (updatingFields) return;
+        saveStatus.setText("未保存的更改");
+        saveStatus.getStyleClass().removeAll("v-status-saved", "v-status-error");
+        if (!saveStatus.getStyleClass().contains("v-status-dirty"))
+            saveStatus.getStyleClass().add("v-status-dirty");
+    }
+
+    private void markSaved() {
+        saveStatus.setText("已保存");
+        saveStatus.getStyleClass().removeAll("v-status-dirty", "v-status-error");
+        if (!saveStatus.getStyleClass().contains("v-status-saved"))
+            saveStatus.getStyleClass().add("v-status-saved");
+    }
+
+    private void markSaveError() {
+        saveStatus.setText("保存失败");
+        saveStatus.getStyleClass().removeAll("v-status-dirty", "v-status-saved");
+        if (!saveStatus.getStyleClass().contains("v-status-error"))
+            saveStatus.getStyleClass().add("v-status-error");
+    }
+
+    private void locateModule() {
+        String query = moduleSearch.getText().trim().toLowerCase(java.util.Locale.ROOT);
+        if (query.isEmpty()) {
+            moduleSearchStatus.setText("输入名称或资源关键字后按回车");
+            return;
+        }
+        for (int i = 0; i < draft.moduleCount(); i++) {
+            String label = moduleLabel(i).toLowerCase(java.util.Locale.ROOT);
+            String resourceName = VModuleResource.value(draft.module(i)).toLowerCase(java.util.Locale.ROOT);
+            if (!label.contains(query) && !resourceName.contains(query)) continue;
+            modules.getSelectionModel().select(i);
+            modules.scrollTo(i);
+            moduleSearchStatus.setText("已定位组件 #" + (i + 1));
+            return;
+        }
+        moduleSearchStatus.setText("没有找到“" + moduleSearch.getText().trim() + "”");
     }
 
     private String moduleLabel(int index) {
@@ -222,25 +315,38 @@ public final class VEditorPane extends BorderPane {
         VSkinEditModel.ModuleFields fields = draft.fields(index);
         moduleKind.setText("用途 " + module.getUsage() + " · 类型 " + module.getType()
                 + " · 位置单位 " + param.getXu() + "/" + param.getYu());
-        name.setText(fields.name());
-        resource.setText(fields.resource());
-        x.setText(fields.x());
-        y.setText(fields.y());
-        dx.setText(fields.dx());
-        dy.setText(fields.dy());
-        width.setText(fields.width());
-        height.setText(fields.height());
-        alpha.setText(fields.alpha());
-        rotate.setText(fields.rotate());
+        updatingFields = true;
+        try {
+            name.setText(fields.name());
+            resource.setText(fields.resource());
+            x.setText(fields.x());
+            y.setText(fields.y());
+            dx.setText(fields.dx());
+            dy.setText(fields.dy());
+            width.setText(fields.width());
+            height.setText(fields.height());
+            alpha.setText(fields.alpha());
+            rotate.setText(fields.rotate());
+        } finally {
+            updatingFields = false;
+        }
         width.setDisable(!module.hasImage());
         height.setDisable(!module.hasImage());
         resource.setDisable(!VModuleResource.canEdit(module));
         refreshPreview(module);
         runtimeCompare.selectModule(index);
+        int layer = param.getLayer();
+        if (VSceneLayout.isFullScreenLayer(layer) && !Integer.valueOf(layer).equals(sceneLayer.getValue())) {
+            sceneLayer.getSelectionModel().select(Integer.valueOf(layer));
+            refreshScene();
+        } else {
+            highlightSceneSelection();
+        }
     }
 
     private void refreshScene() {
         sceneCanvas.getChildren().clear();
+        sceneNodes.clear();
         Integer layer = sceneLayer.getValue();
         if (layer == null) {
             sceneStatus.setText("此皮肤没有可显示的图层");
@@ -277,6 +383,7 @@ public final class VEditorPane extends BorderPane {
             });
             node.setOnMouseDragged(event -> {
                 if (!dragging[0]) return;
+                selectedOutline.setVisible(false);
                 node.setLayoutX(drag[2] + event.getSceneX() - drag[0]);
                 node.setLayoutY(drag[3] + event.getSceneY() - drag[1]);
                 event.consume();
@@ -289,6 +396,7 @@ public final class VEditorPane extends BorderPane {
                 if (Math.abs(deltaX) < .5 && Math.abs(deltaY) < .5) {
                     node.setLayoutX(drag[2]);
                     node.setLayoutY(drag[3]);
+                    highlightSceneSelection();
                     return;
                 }
                 String failure = null;
@@ -296,6 +404,7 @@ public final class VEditorPane extends BorderPane {
                     VSceneLayout.Offsets offsets = VSceneLayout.movedOffsets(draft.module(index), context,
                             640, 360, deltaX, deltaY);
                     draft.updateModule(index, draft.fields(index).withOffsets(offsets.dx(), offsets.dy()));
+                    markDirty();
                     if (currentModule == index) showModule(index);
                 } catch (IllegalArgumentException error) {
                     failure = error.getMessage();
@@ -305,8 +414,23 @@ public final class VEditorPane extends BorderPane {
                 event.consume();
             });
             sceneCanvas.getChildren().add(node);
+            sceneNodes.put(index, node);
         }
         sceneStatus.setText(plan.status());
+        highlightSceneSelection();
+    }
+
+    private void highlightSceneSelection() {
+        sceneCanvas.getChildren().remove(selectedOutline);
+        ImageView selected = sceneNodes.get(currentModule);
+        if (selected == null) return;
+        Bounds bounds = selected.getBoundsInParent();
+        selectedOutline.setX(bounds.getMinX() - 2);
+        selectedOutline.setY(bounds.getMinY() - 2);
+        selectedOutline.setWidth(bounds.getWidth() + 4);
+        selectedOutline.setHeight(bounds.getHeight() + 4);
+        selectedOutline.setVisible(true);
+        sceneCanvas.getChildren().add(selectedOutline);
     }
 
     private void refreshPreview(SkinFile.Module module) {
@@ -348,7 +472,7 @@ public final class VEditorPane extends BorderPane {
             modules.getItems().set(currentModule, moduleLabel(currentModule));
             return true;
         } catch (NumberFormatException error) {
-            alert("组件属性应为有效数字", error.getMessage());
+            showError("组件属性应为有效数字", error.getMessage());
             return false;
         }
     }
@@ -383,23 +507,30 @@ public final class VEditorPane extends BorderPane {
                         VLuaSource.editedBytes(luaBaseline, luaSource.getText()));
             }
             luaBaseline = VLuaSource.load(document);
-            luaSource.setText(luaBaseline.source());
+            updatingFields = true;
+            try {
+                luaSource.setText(luaBaseline.source());
+            } finally {
+                updatingFields = false;
+            }
             luaSource.setEditable(luaBaseline.originalBytes() != null);
             luaStatus.setText(luaBaseline.diagnostic());
             refreshScene();
             runtimeCompare.refreshAfterSave();
             heading.setText("Malody V · " + title.getText());
-            alert("已保存", document.path().toString());
+            markSaved();
             return true;
         } catch (IOException error) {
-            alert("保存失败", error.getMessage());
+            markSaveError();
+            showError("保存失败", error.getMessage());
             return false;
         }
     }
 
-    private void alert(String heading, String message) {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION, message);
+    private void showError(String heading, String message) {
+        Alert alert = new Alert(Alert.AlertType.ERROR, message);
         alert.setHeaderText(heading);
+        if (getScene() != null) alert.initOwner(getScene().getWindow());
         alert.showAndWait();
     }
 }
