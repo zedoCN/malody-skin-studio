@@ -251,6 +251,8 @@ public class ZXLogger {
             if (sourceClassName == null) {
                 sourceClassName = "";
             }
+            Object[] parameters = record.getParameters();
+            Object sourceLine = parameters != null && parameters.length > 0 ? parameters[0] : "?";
 
             StringBuilder prefix = new StringBuilder();
             if (enabledANSI)
@@ -264,7 +266,7 @@ public class ZXLogger {
                         .append(record.getSourceMethodName())
                         .append(ANSICode.RESET)
                         .append('(')
-                        .append(ANSICode.applyStyle(record.getParameters()[0], ANSICode.BRIGHT_GREEN))
+                        .append(ANSICode.applyStyle(sourceLine, ANSICode.BRIGHT_GREEN))
                         .append(")/")
                         .append(styleLevel(record.getLevel()))
                         .append("]")
@@ -280,7 +282,7 @@ public class ZXLogger {
                         .append('.')
                         .append(record.getSourceMethodName())
                         .append('(')
-                        .append(record.getParameters()[0])
+                        .append(sourceLine)
                         .append(")/")
                         .append(record.getLevel().getName())
                         .append("]")
