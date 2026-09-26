@@ -194,7 +194,8 @@ final class SkinStudioWindow extends BorderPane {
                 + "• 预览中部分普通图片可以直接拖动位置。\n\n"
                 + "Malody V（.msp / info.asm / 皮肤目录）\n"
                 + "• 左侧输入名称或资源名即可筛选组件；Esc 清除筛选。\n"
-                + "• 修改组件属性或 Lua 源码后，点击“保存皮肤”写回文件。\n\n"
+                + "• 修改组件属性或 Lua 源码后，点击“保存皮肤”写回文件。\n"
+                + "• 用顶部按钮或 ⌘/Ctrl+Z、⌘/Ctrl+Shift+Z 撤销和重做；画布拖动也可撤销。\n\n"
                 + "建议先复制一份皮肤，再尝试修改。");
         guide.showAndWait();
     }

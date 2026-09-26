@@ -238,6 +238,17 @@
     -fx-background-color: #328486;
 }
 
+.v-editor .v-toolbar .button.v-history-action {
+    -fx-background-color: transparent;
+    -fx-border-color: -studio-border;
+    -fx-text-fill: -studio-text;
+    -fx-font-weight: normal;
+}
+
+.v-editor .v-toolbar .button.v-history-action:hover {
+    -fx-background-color: -studio-selection;
+}
+
 .v-editor .v-preview-tabs .tab-header-area .tab-header-background {
     -fx-background-color: -studio-surface;
     -fx-border-color: -studio-border;

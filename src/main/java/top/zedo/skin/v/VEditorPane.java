@@ -5,6 +5,7 @@ import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
+import javafx.scene.Node;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
@@ -17,10 +18,12 @@ import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextInputControl;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -46,8 +49,11 @@ import java.util.Optional;
 public final class VEditorPane extends BorderPane {
     private final MspSkinDocument document;
     private final VSkinEditModel draft;
+    private final VEditHistory<EditorState> history = new VEditHistory<>();
     private final Label heading;
     private final Label saveStatus = new Label("已保存");
+    private final Button undoButton = new Button("撤销");
+    private final Button redoButton = new Button("重做");
     private final ListView<String> modules = new ListView<>();
     private final List<String> moduleLabels = new ArrayList<>();
     private final List<Integer> visibleModuleIndices = new ArrayList<>();
@@ -86,6 +92,7 @@ public final class VEditorPane extends BorderPane {
     private int currentModule = -1;
     private boolean changingSelection;
     private boolean updatingFields;
+    private boolean restoringHistory;
 
     public VEditorPane(Path path) throws IOException {
         getStyleClass().add("v-editor");
@@ -100,8 +107,16 @@ public final class VEditorPane extends BorderPane {
         Button save = new Button("保存皮肤");
         save.setOnAction(_ -> save());
         save.getStyleClass().add("v-primary-action");
+        undoButton.getStyleClass().add("v-history-action");
+        redoButton.getStyleClass().add("v-history-action");
+        undoButton.setTooltip(new Tooltip("撤销 · ⌘/Ctrl+Z"));
+        redoButton.setTooltip(new Tooltip("重做 · ⌘/Ctrl+Shift+Z"));
+        undoButton.setOnAction(_ -> undoEdit());
+        redoButton.setOnAction(_ -> redoEdit());
+        undoButton.setDisable(true);
+        redoButton.setDisable(true);
         saveStatus.getStyleClass().addAll("v-save-status", "v-status-saved");
-        HBox toolbar = new HBox(12, heading, saveStatus, save);
+        HBox toolbar = new HBox(8, heading, saveStatus, undoButton, redoButton, save);
         toolbar.getStyleClass().add("v-toolbar");
         toolbar.setAlignment(Pos.CENTER_LEFT);
         toolbar.setPadding(new Insets(10));
@@ -288,6 +303,8 @@ public final class VEditorPane extends BorderPane {
             selectCurrentInList();
             showModule(next);
             if (previous != null && !previous.equals(draft.module(previousIndex))) refreshScene();
+            history.breakGroup();
+            history.replaceCurrent(captureState());
         });
         refreshScene();
         if (!modules.getItems().isEmpty()) {
@@ -308,6 +325,8 @@ public final class VEditorPane extends BorderPane {
             refreshScene();
             if (currentModule >= 0) refreshPreview(draft.module(currentModule));
         });
+        history.reset(captureState());
+        addEventFilter(KeyEvent.KEY_PRESSED, this::handleHistoryShortcut);
     }
 
     private static HBox row(String label, TextField field) {
@@ -329,22 +348,47 @@ public final class VEditorPane extends BorderPane {
         for (TextField field : new TextField[]{title, creator, cover, name, resource,
                 x, y, dx, dy, width, height, alpha, rotate}) {
             field.textProperty().addListener((_, _, _) -> {
+                if (updatingFields || restoringHistory) return;
                 field.getStyleClass().remove("v-invalid");
+                recordEdit(field);
                 markDirty();
-                if (!updatingFields && field != title && field != creator && field != cover)
+                if (field != title && field != creator && field != cover)
                     previewDebounce.playFromStart();
             });
         }
-        description.textProperty().addListener((_, _, _) -> markDirty());
-        luaSource.textProperty().addListener((_, _, _) -> markDirty());
+        description.textProperty().addListener((_, _, _) -> {
+            if (updatingFields || restoringHistory) return;
+            recordEdit(description);
+            markDirty();
+        });
+        luaSource.textProperty().addListener((_, _, _) -> {
+            if (updatingFields || restoringHistory) return;
+            recordEdit(luaSource);
+            markDirty();
+        });
     }
 
     private void markDirty() {
-        if (updatingFields) return;
+        if (updatingFields || restoringHistory) return;
+        if (!hasUnsavedChanges()) {
+            markSaved();
+            return;
+        }
         saveStatus.setText("未保存的更改");
         saveStatus.getStyleClass().removeAll("v-status-saved", "v-status-error");
         if (!saveStatus.getStyleClass().contains("v-status-dirty"))
             saveStatus.getStyleClass().add("v-status-dirty");
+    }
+
+    private boolean hasUnsavedChanges() {
+        VSkinEditModel current = new VSkinEditModel(draft.skin());
+        try {
+            if (currentModule >= 0) current.updateModule(currentModule, moduleFields());
+        } catch (NumberFormatException error) {
+            return true;
+        }
+        current.updateMetadata(title.getText(), creator.getText(), description.getText(), cover.getText());
+        return !current.skin().equals(document.skin()) || !luaSource.getText().equals(luaBaseline.source());
     }
 
     private void markSaved() {
@@ -360,6 +404,106 @@ public final class VEditorPane extends BorderPane {
         if (!saveStatus.getStyleClass().contains("v-status-error"))
             saveStatus.getStyleClass().add("v-status-error");
     }
+
+    private VSkinEditModel.ModuleFields moduleFields() {
+        return new VSkinEditModel.ModuleFields(name.getText(), resource.getText(), x.getText(), y.getText(),
+                dx.getText(), dy.getText(), width.getText(), height.getText(), alpha.getText(), rotate.getText());
+    }
+
+    private EditorState captureState() {
+        return new EditorState(draft.skin(), currentModule,
+                currentModule < 0 ? null : moduleFields(), title.getText(), creator.getText(),
+                description.getText(), cover.getText(), luaSource.getText());
+    }
+
+    private void recordEdit(Object group) {
+        if (!history.initialized() || restoringHistory) return;
+        history.record(captureState(), group);
+        updateHistoryButtons();
+    }
+
+    private void updateHistoryButtons() {
+        undoButton.setDisable(!history.canUndo());
+        redoButton.setDisable(!history.canRedo());
+    }
+
+    void undoEdit() {
+        if (!history.canUndo()) return;
+        previewDebounce.stop();
+        history.replaceCurrent(captureState());
+        restoreState(history.undo());
+    }
+
+    void redoEdit() {
+        if (!history.canRedo()) return;
+        previewDebounce.stop();
+        history.replaceCurrent(captureState());
+        restoreState(history.redo());
+    }
+
+    private void restoreState(EditorState state) {
+        restoringHistory = true;
+        try {
+            draft.restore(state.skin());
+            title.setText(state.title());
+            creator.setText(state.creator());
+            description.setText(state.description());
+            cover.setText(state.cover());
+            luaSource.setText(state.lua());
+            currentModule = state.module();
+            moduleLabels.clear();
+            for (int i = 0; i < draft.moduleCount(); i++) moduleLabels.add(moduleLabel(i));
+            refreshModuleList();
+            showModule(currentModule);
+            if (state.fields() != null) {
+                VSkinEditModel.ModuleFields fields = state.fields();
+                name.setText(fields.name());
+                resource.setText(fields.resource());
+                x.setText(fields.x());
+                y.setText(fields.y());
+                dx.setText(fields.dx());
+                dy.setText(fields.dy());
+                width.setText(fields.width());
+                height.setText(fields.height());
+                alpha.setText(fields.alpha());
+                rotate.setText(fields.rotate());
+            }
+            applyModule(false);
+            history.replaceCurrent(captureState());
+            inspectorStatus.setText("");
+            for (TextField field : new TextField[]{x, y, dx, dy, width, height, alpha, rotate})
+                field.getStyleClass().remove("v-invalid");
+            refreshScene();
+        } finally {
+            restoringHistory = false;
+        }
+        markDirty();
+        updateHistoryButtons();
+    }
+
+    private void handleHistoryShortcut(KeyEvent event) {
+        if (!event.isShortcutDown() || event.isAltDown()) return;
+        Node focused = getScene() == null ? null : getScene().getFocusOwner();
+        if (focused instanceof TextInputControl control && !isSkinInput(control)) return;
+        if (event.getCode() == KeyCode.Z) {
+            if (event.isShiftDown()) redoEdit();
+            else undoEdit();
+            event.consume();
+        } else if (event.getCode() == KeyCode.Y && !event.isShiftDown()) {
+            redoEdit();
+            event.consume();
+        }
+    }
+
+    private boolean isSkinInput(TextInputControl control) {
+        return control == title || control == creator || control == description || control == cover
+                || control == luaSource || control == name || control == resource || control == x
+                || control == y || control == dx || control == dy || control == width
+                || control == height || control == alpha || control == rotate;
+    }
+
+    private record EditorState(SkinFile skin, int module, VSkinEditModel.ModuleFields fields,
+                               String title, String creator, String description, String cover, String lua) { }
 
     private void locateModule() {
         if (moduleSearch.getText().isBlank() || visibleModuleIndices.isEmpty()) return;
@@ -565,8 +709,9 @@ public final class VEditorPane extends BorderPane {
                     VSceneLayout.Offsets offsets = VSceneLayout.movedOffsets(draft.module(index), context,
                             640, 360, deltaX, deltaY);
                     draft.updateModule(index, draft.fields(index).withOffsets(offsets.dx(), offsets.dy()));
-                    markDirty();
                     if (currentModule == index) showModule(index);
+                    recordEdit(null);
+                    markDirty();
                 } catch (IllegalArgumentException error) {
                     failure = error.getMessage();
                 }
@@ -696,9 +841,7 @@ public final class VEditorPane extends BorderPane {
         if (currentModule < 0 || currentModule >= draft.moduleCount()) return true;
         try {
             String previousResource = VModuleResource.value(draft.module(currentModule));
-            draft.updateModule(currentModule, new VSkinEditModel.ModuleFields(name.getText(), resource.getText(),
-                    x.getText(), y.getText(), dx.getText(), dy.getText(), width.getText(), height.getText(),
-                    alpha.getText(), rotate.getText()));
+            draft.updateModule(currentModule, moduleFields());
             String label = moduleLabel(currentModule);
             if (!label.equals(moduleLabels.get(currentModule))
                     || !previousResource.equals(VModuleResource.value(draft.module(currentModule)))) {
@@ -706,6 +849,7 @@ public final class VEditorPane extends BorderPane {
                 refreshModuleList();
             }
             inspectorStatus.setText("");
+            if (!restoringHistory) history.replaceCurrent(captureState());
             return true;
         } catch (NumberFormatException error) {
             if (!reportErrors) return false;
@@ -743,6 +887,7 @@ public final class VEditorPane extends BorderPane {
             return confirmInvalid.showAndWait().orElse(ButtonType.CANCEL) == discardInvalid;
         }
         draft.updateMetadata(title.getText(), creator.getText(), description.getText(), cover.getText());
+        history.replaceCurrent(captureState());
         if (draft.skin().equals(document.skin()) && luaSource.getText().equals(luaBaseline.source())) return true;
         ButtonType saveChoice = new ButtonType("保存");
         ButtonType discardChoice = new ButtonType("不保存");
@@ -761,6 +906,7 @@ public final class VEditorPane extends BorderPane {
         previewDebounce.stop();
         if (!applyModule()) return false;
         draft.updateMetadata(title.getText(), creator.getText(), description.getText(), cover.getText());
+        history.replaceCurrent(captureState());
         try {
             if (luaSource.getText().equals(luaBaseline.source())) {
                 document.save(draft.skin());
@@ -782,6 +928,9 @@ public final class VEditorPane extends BorderPane {
             runtimeCompare.refreshAfterSave();
             heading.setText("Malody V · " + (title.getText().isBlank()
                     ? document.path().getFileName() : title.getText()));
+            history.replaceCurrent(captureState());
+            history.breakGroup();
+            updateHistoryButtons();
             markSaved();
             return true;
         } catch (IOException error) {

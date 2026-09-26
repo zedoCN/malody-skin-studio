@@ -4,10 +4,17 @@ import javafx.application.Platform;
 import javafx.collections.ListChangeListener;
 import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextArea;
 import javafx.scene.image.ImageView;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
+import javafx.scene.input.PickResult;
 import javafx.scene.layout.Pane;
 import javafx.stage.Stage;
 import top.zedo.skin.v.proto.SkinVProto.SkinFile;
@@ -42,9 +49,12 @@ public final class VEditorFlowSmoke {
                 .setImage(module.getImage().toBuilder().setFile("blue.png"))
                 .build();
         Path asm = directory.resolve("info.asm");
+        Path lua = directory.resolve("skin.lua");
         Files.write(asm, SkinFile.newBuilder().setMeta(
-                SkinFile.Meta.newBuilder().setTitle("probe")).addModules(module).addModules(second)
+                SkinFile.Meta.newBuilder().setTitle("probe").setScript("skin.lua"))
+                .addModules(module).addModules(second)
                 .build().toByteArray());
+        Files.writeString(lua, "return 1\n");
         BufferedImage image = new BufferedImage(2, 2, BufferedImage.TYPE_INT_ARGB);
         for (int y = 0; y < 2; y++) for (int x = 0; x < 2; x++) image.setRGB(x, y, 0xffff0000);
         ImageIO.write(image, "png", directory.resolve("red.png").toFile());
@@ -79,6 +89,13 @@ public final class VEditorFlowSmoke {
                 try {
                     VEditorPane pane = paneRef.get();
                     require(nodes(pane).get(0).getLayoutX() > originalX.get(), "图片未移动");
+                    require(!((Button) field(pane, "undoButton")).isDisabled(), "编辑后撤销按钮不可用");
+                    pane.fireEvent(shortcut(KeyCode.Z, false));
+                    require(nodes(pane).get(0).getLayoutX() == originalX.get(), "撤销未恢复画布");
+                    require(((TextField) field(pane, "x")).getText().equals("0.0"), "撤销未恢复属性");
+                    require(((Button) field(pane, "undoButton")).isDisabled(), "撤销到初始状态后按钮仍可用");
+                    pane.fireEvent(shortcut(KeyCode.Z, true));
+                    require(nodes(pane).get(0).getLayoutX() > originalX.get(), "重做未恢复画布");
                     require((int) field(pane, "currentModule") == 0, "更新预览丢失了组件选中状态");
                     require(Arrays.equals(original, Files.readAllBytes(asm)), "预览提前写入文件");
                     TextField search = (TextField) field(pane, "moduleSearch");
@@ -99,14 +116,47 @@ public final class VEditorFlowSmoke {
                     require((int) field(pane, "currentModule") == 0, "名称更新丢失了组件选中状态");
                     require(((ListView<?>) field(pane, "modules")).getItems().getFirst().toString().contains("renamed"),
                             "列表未显示新名称");
+                    TextArea luaEditor = (TextArea) field(pane, "luaSource");
+                    luaEditor.setText("return 2\n");
+                    pane.undoEdit();
+                    require(luaEditor.getText().equals("return 1\n"), "撤销未恢复 Lua");
+                    pane.redoEdit();
+                    require(luaEditor.getText().equals("return 2\n"), "重做未恢复 Lua");
+                    require(pane.saveNow(), "Lua 保存失败");
+                    require(Files.readString(lua).equals("return 2\n"), "Lua 保存内容不正确");
+                    pane.undoEdit();
+                    require(luaEditor.getText().equals("return 1\n"), "保存后不能撤销 Lua");
+                    pane.redoEdit();
+                    require(((Label) field(pane, "saveStatus")).getText().equals("已保存"),
+                            "重做到保存版本后状态不正确");
+                    ImageView moved = nodes(pane).get(0);
+                    String beforeDrag = ((TextField) field(pane, "dx")).getText();
+                    moved.getOnMousePressed().handle(mouse(MouseEvent.MOUSE_PRESSED, 100, 100, moved));
+                    moved.getOnMouseDragged().handle(mouse(MouseEvent.MOUSE_DRAGGED, 112, 100, moved));
+                    moved.getOnMouseReleased().handle(mouse(MouseEvent.MOUSE_RELEASED, 112, 100, moved));
+                    String afterDrag = ((TextField) field(pane, "dx")).getText();
+                    require(!afterDrag.equals(beforeDrag), "拖动未更新偏移");
+                    pane.undoEdit();
+                    require(((TextField) field(pane, "dx")).getText().equals(beforeDrag), "拖动不能一步撤销");
+                    pane.redoEdit();
+                    require(((TextField) field(pane, "dx")).getText().equals(afterDrag), "拖动不能重做");
+                    double beforeFastRedo = nodes(pane).get(0).getLayoutX();
+                    ((TextField) field(pane, "x")).setText("25");
+                    pane.undoEdit();
+                    require(nodes(pane).get(0).getLayoutX() == beforeFastRedo, "快速撤销未恢复画布");
+                    pane.redoEdit();
+                    require(nodes(pane).get(0).getLayoutX() > beforeFastRedo, "自动预览前重做未更新画布");
+                    pane.undoEdit();
                     byte[] saved = Files.readAllBytes(asm);
                     require(!Arrays.equals(original, saved), "保存没有写入文件");
+                    String beforeInvalid = ((TextField) field(pane, "x")).getText();
                     ((TextField) field(pane, "x")).setText("invalid");
                     require(!pane.saveNow(), "无效数字仍被保存");
                     require(Arrays.equals(saved, Files.readAllBytes(asm)), "无效数字覆盖了文件");
                     require(((Label) field(pane, "inspectorStatus")).getText().contains("有效数字"),
                             "无效数字没有就地提示");
-                    ((TextField) field(pane, "x")).setText("20");
+                    pane.undoEdit();
+                    require(((TextField) field(pane, "x")).getText().equals(beforeInvalid), "无效输入不能撤销");
                     search.setText("blue.png");
                     search.getOnAction().handle(new javafx.event.ActionEvent());
                     require((int) field(pane, "currentModule") == 1, "回车没有选中筛选结果");
@@ -114,7 +164,7 @@ public final class VEditorFlowSmoke {
                     search.getOnAction().handle(new javafx.event.ActionEvent());
                     require((int) field(pane, "currentModule") == 0, "筛选结果无法切回原组件");
                     require(Arrays.equals(saved, Files.readAllBytes(asm)), "筛选与切换提前写入文件");
-                    System.out.println("V flow PASS: live preview, draft save, inline validation, module filter");
+                    System.out.println("V flow PASS: live preview, undo/redo, draft save, inline validation, module filter");
                 } catch (Throwable error) {
                     failure.set(error);
                 } finally {
@@ -143,5 +193,15 @@ public final class VEditorFlowSmoke {
 
     private static void require(boolean condition, String message) {
         if (!condition) throw new AssertionError(message);
+    }
+
+    private static KeyEvent shortcut(KeyCode code, boolean shift) {
+        return new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, shift, true, false, true);
+    }
+
+    private static MouseEvent mouse(javafx.event.EventType<MouseEvent> type, double x, double y, Node node) {
+        return new MouseEvent(type, x, y, x, y, MouseButton.PRIMARY, 1,
+                false, false, false, false, true, false, false,
+                false, false, false, new PickResult(node, x, y));
     }
 }

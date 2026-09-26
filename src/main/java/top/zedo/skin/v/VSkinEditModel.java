@@ -16,6 +16,10 @@ final class VSkinEditModel {
         return draft.build();
     }
 
+    void restore(SkinFile skin) {
+        draft.clear().mergeFrom(Objects.requireNonNull(skin));
+    }
+
     SkinFile.Meta metadata() {
         return draft.getMeta();
     }
