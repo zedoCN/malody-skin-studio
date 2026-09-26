@@ -37,6 +37,9 @@ public final class MspInspector {
         System.out.println("作者: " + skin.getMeta().getCreator());
         System.out.println("模式: " + skin.getMeta().getMode());
         System.out.println("组件: " + skin.getModulesCount());
+        VLuaSource.Result lua = VLuaSource.load(document);
+        System.out.println("Lua: " + (lua.path().isBlank() ? "(未设置)" : lua.path()));
+        System.out.println("Lua 状态: " + lua.diagnostic());
         if (!layout) {
             for (int i = 0; i < skin.getModulesCount(); i++) {
                 SkinFile.Module module = skin.getModules(i);

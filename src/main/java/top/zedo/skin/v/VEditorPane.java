@@ -44,6 +44,9 @@ public final class VEditorPane extends BorderPane {
     private final TextField title = new TextField();
     private final TextField creator = new TextField();
     private final TextArea description = new TextArea();
+    private final TextArea luaSource = new TextArea();
+    private final Label luaStatus = new Label();
+    private VLuaSource.Result luaBaseline;
     private final TextField cover = new TextField();
     private final TextField name = new TextField();
     private final TextField resource = new TextField();
@@ -149,9 +152,22 @@ public final class VEditorPane extends BorderPane {
         sceneBox.setPadding(new Insets(12));
         Tab resourceTab = new Tab("单资源", imageBox);
         Tab sceneTab = new Tab("布局概览", sceneBox);
+        luaBaseline = VLuaSource.load(document);
+        Label luaPath = new Label("info.asm 脚本路径：" + (luaBaseline.path().isBlank() ? "(未设置)" : luaBaseline.path()));
+        luaPath.setWrapText(true);
+        luaSource.setText(luaBaseline.source());
+        luaSource.setEditable(luaBaseline.originalBytes() != null);
+        luaSource.setWrapText(false);
+        luaSource.setStyle("-fx-font-family: monospace;");
+        luaStatus.setText(luaBaseline.diagnostic());
+        VBox luaBox = new VBox(8, luaPath, luaStatus, luaSource);
+        luaBox.setPadding(new Insets(12));
+        VBox.setVgrow(luaSource, Priority.ALWAYS);
+        Tab luaTab = new Tab("Lua 源码", luaBox);
         resourceTab.setClosable(false);
         sceneTab.setClosable(false);
-        TabPane previews = new TabPane(resourceTab, sceneTab);
+        luaTab.setClosable(false);
+        TabPane previews = new TabPane(resourceTab, sceneTab, luaTab);
         HBox content = new HBox(propertyScroll, previews);
         HBox.setHgrow(previews, Priority.ALWAYS);
         setCenter(content);
@@ -379,7 +395,7 @@ public final class VEditorPane extends BorderPane {
     public boolean canClose() {
         if (!applyModule()) return false;
         draft.updateMetadata(title.getText(), creator.getText(), description.getText(), cover.getText());
-        if (draft.skin().equals(document.skin())) return true;
+        if (draft.skin().equals(document.skin()) && luaSource.getText().equals(luaBaseline.source())) return true;
         ButtonType saveChoice = new ButtonType("保存");
         ButtonType discardChoice = new ButtonType("不保存");
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, "V 皮肤有未保存的修改。",
@@ -395,7 +411,17 @@ public final class VEditorPane extends BorderPane {
         if (!applyModule()) return false;
         draft.updateMetadata(title.getText(), creator.getText(), description.getText(), cover.getText());
         try {
-            document.save(draft.skin());
+            if (luaSource.getText().equals(luaBaseline.source())) {
+                document.save(draft.skin());
+            } else {
+                if (luaBaseline.originalBytes() == null) throw new IOException("Lua 文件不可编辑，请重新打开皮肤");
+                document.save(draft.skin(), luaBaseline.path(), luaBaseline.originalBytes(),
+                        VLuaSource.editedBytes(luaBaseline, luaSource.getText()));
+            }
+            luaBaseline = VLuaSource.load(document);
+            luaSource.setText(luaBaseline.source());
+            luaSource.setEditable(luaBaseline.originalBytes() != null);
+            luaStatus.setText(luaBaseline.diagnostic());
             refreshScene();
             if (getScene() != null && getScene().getWindow() instanceof Stage stage) stage.setTitle("Malody V · " + title.getText());
             alert("已保存", document.path().toString());

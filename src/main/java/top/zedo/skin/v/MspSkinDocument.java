@@ -9,6 +9,7 @@ import java.io.OutputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermission;
@@ -24,6 +25,7 @@ import java.util.zip.ZipOutputStream;
 public final class MspSkinDocument {
     private static final int MAX_ASM_BYTES = 16 * 1024 * 1024;
     private static final int MAX_PREVIEW_BYTES = 64 * 1024 * 1024;
+    static final int MAX_LUA_BYTES = 1024 * 1024;
 
     private final Path path;
     private final boolean archive;
@@ -87,27 +89,38 @@ public final class MspSkinDocument {
     public SkinFile skin() { return skin; }
 
     public byte[] resource(String filename) throws IOException {
+        return resource(filename, MAX_PREVIEW_BYTES);
+    }
+
+    byte[] resource(String filename, int maxBytes) throws IOException {
         String name = safeResourceName(filename);
         if (archive) {
             try (ZipFile zip = new ZipFile(path.toFile())) {
                 ZipEntry entry = zip.getEntry(entryPrefix + name);
                 if (entry == null || entry.isDirectory()) return null;
-                return readBounded(zip.getInputStream(entry), MAX_PREVIEW_BYTES);
+                return readBounded(zip.getInputStream(entry), maxBytes);
             }
         }
         Path file = path.resolve(name).normalize();
         if (!file.startsWith(path) || !Files.isRegularFile(file)) return null;
         if (!file.toRealPath().startsWith(path.toRealPath())) throw new IOException("资源路径越界: " + filename);
-        if (Files.size(file) > MAX_PREVIEW_BYTES) throw new IOException("资源过大: " + name);
+        if (Files.size(file) > maxBytes) throw new IOException("资源过大: " + name);
         return Files.readAllBytes(file);
     }
 
     private static String safeResourceName(String filename) throws IOException {
         if (filename == null || filename.isBlank()) throw new IOException("资源名为空");
         String normalized = filename.replace('\\', '/');
-        Path relative = Path.of(normalized).normalize();
-        if (relative.isAbsolute() || relative.startsWith("..")) throw new IOException("资源路径越界: " + filename);
-        return relative.toString().replace('\\', '/');
+        try {
+            Path relative = Path.of(normalized).normalize();
+            if (relative.isAbsolute() || relative.startsWith("..")
+                    || normalized.matches("^[A-Za-z]:/.*")) {
+                throw new IOException("资源路径越界: " + filename);
+            }
+            return relative.toString().replace('\\', '/');
+        } catch (InvalidPathException error) {
+            throw new IOException("资源路径无效: " + filename, error);
+        }
     }
 
     private static byte[] readBounded(InputStream input, int maxBytes) throws IOException {
@@ -119,57 +132,162 @@ public final class MspSkinDocument {
     }
 
     public void save(SkinFile updated) throws IOException {
+        save(updated, null, null, null);
+    }
+
+    void save(SkinFile updated, String scriptPath, byte[] originalScript, byte[] replacementScript)
+            throws IOException {
         Objects.requireNonNull(updated);
         if (!updated.hasMeta()) throw new IOException("不能保存缺少元数据的皮肤");
         if (updated.getMeta().getTitle().isBlank()) throw new IOException("皮肤标题不能为空");
-        // A no-op save should not repack an archive or rewrite an unchanged info.asm.
-        if (updated.equals(skin)) return;
+        String scriptEntry = null;
+        boolean scriptChanged = false;
+        if (scriptPath != null) {
+            if (scriptPath.isBlank()) throw new IOException("皮肤未引用 Lua 文件");
+            if (!scriptPath.equals(skin.getMeta().getScript())
+                    || !scriptPath.equals(updated.getMeta().getScript())) {
+                throw new IOException("Lua 引用路径已改变，请重新打开皮肤");
+            }
+            scriptEntry = safeResourceName(scriptPath);
+            if (!scriptPath.replace('\\', '/').equals(scriptEntry)) {
+                throw new IOException("Lua 路径不是规范的相对路径: " + scriptPath);
+            }
+            if (scriptEntry.equals("info.asm")) {
+                throw new IOException("Lua 路径与 info.asm 冲突");
+            }
+            if (originalScript == null || replacementScript == null) {
+                throw new IOException("Lua 文件缺失或无法读取: " + scriptPath);
+            }
+            if (replacementScript.length > MAX_LUA_BYTES) {
+                throw new IOException("Lua 文件超过 1 MiB 限制: " + scriptPath);
+            }
+            if (!archive && Files.isSymbolicLink(path.resolve(scriptEntry))) {
+                throw new IOException("Lua 文件是符号链接，请先转换为皮肤目录内的普通文件: " + scriptPath);
+            }
+            scriptChanged = !Arrays.equals(originalScript, replacementScript);
+        }
         Path destination = archive ? path : path.resolve("info.asm");
         requireUnchanged(destination);
-        Path temporary = Files.createTempFile(path.getParent(), ".malody-skin-", archive ? ".msp" : ".asm");
+        if (scriptEntry != null) requireScriptUnchanged(scriptEntry, originalScript);
+        boolean asmChanged = !updated.equals(skin);
+        if (!asmChanged && !scriptChanged) return;
+
+        Path temporary = null;
+        Path scriptTemporary = null;
+        Path scriptBackup = null;
+        boolean preserveBackup = false;
         try {
             if (archive) {
+                temporary = Files.createTempFile(path.getParent(), ".malody-skin-", ".msp");
                 try (ZipFile source = new ZipFile(path.toFile());
                      OutputStream output = Files.newOutputStream(temporary);
                      ZipOutputStream target = new ZipOutputStream(output)) {
                     if (source.getComment() != null) target.setComment(source.getComment());
                     Enumeration<? extends ZipEntry> entries = source.entries();
                     boolean wroteAsm = false;
+                    boolean wroteScript = false;
                     while (entries.hasMoreElements()) {
                         ZipEntry old = entries.nextElement();
                         boolean isAsm = old.getName().equals(entryPrefix + "info.asm");
-                        ZipEntry copy = copyEntry(old, isAsm);
+                        boolean isScript = scriptEntry != null && old.getName().equals(entryPrefix + scriptEntry);
+                        if (isScript && wroteScript) throw new IOException("MSP 中包含多个 Lua 文件: " + scriptPath);
+                        ZipEntry copy = copyEntry(old, (isAsm && asmChanged) || (isScript && scriptChanged));
                         target.putNextEntry(copy);
-                        if (isAsm) {
+                        if (isAsm && asmChanged) {
                             updated.writeTo(target);
-                            wroteAsm = true;
+                        } else if (isScript && scriptChanged) {
+                            target.write(replacementScript);
                         } else if (!old.isDirectory()) {
                             try (InputStream input = source.getInputStream(old)) { input.transferTo(target); }
                         }
+                        if (isAsm) wroteAsm = true;
+                        if (isScript) wroteScript = true;
                         target.closeEntry();
                     }
                     if (!wroteAsm) throw new IOException("MSP 中的 info.asm 已消失");
+                    if (scriptEntry != null && !wroteScript) throw new IOException("引用的 Lua 文件不存在: " + scriptPath);
                 }
             } else {
-                Files.write(temporary, updated.toByteArray());
+                if (asmChanged) {
+                    temporary = Files.createTempFile(destination.getParent(), ".malody-skin-", ".asm");
+                    Files.write(temporary, updated.toByteArray());
+                    copyPermissions(destination, temporary);
+                }
+                if (scriptChanged) {
+                    Path scriptFile = path.resolve(scriptEntry).normalize();
+                    scriptTemporary = Files.createTempFile(scriptFile.getParent(), ".malody-lua-", ".lua");
+                    Files.write(scriptTemporary, replacementScript);
+                    copyPermissions(scriptFile, scriptTemporary);
+                }
             }
             requireUnchanged(destination);
-            try {
-                Set<PosixFilePermission> permissions = Files.getPosixFilePermissions(destination);
-                Files.setPosixFilePermissions(temporary, permissions);
-            } catch (UnsupportedOperationException ignored) {
-                // Filesystems without POSIX permissions retain their default replacement behavior.
-            }
-            byte[] replacementDigest = digest(temporary);
-            try {
-                Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
-                Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING);
+            if (scriptEntry != null) requireScriptUnchanged(scriptEntry, originalScript);
+            byte[] replacementDigest = temporary == null ? sourceDigest : digest(temporary);
+            if (archive) {
+                copyPermissions(destination, temporary);
+                moveReplacing(temporary, destination);
+            } else {
+                Path scriptFile = scriptChanged ? path.resolve(scriptEntry).normalize() : null;
+                if (scriptChanged && asmChanged) {
+                    scriptBackup = Files.createTempFile(scriptFile.getParent(), ".malody-lua-backup-", ".lua");
+                    Files.write(scriptBackup, originalScript);
+                    copyPermissions(scriptFile, scriptBackup);
+                }
+                if (scriptChanged) moveReplacing(scriptTemporary, scriptFile);
+                if (asmChanged) {
+                    try {
+                        moveReplacing(temporary, destination);
+                    } catch (IOException saveError) {
+                        if (scriptBackup != null) {
+                            try {
+                                moveReplacing(scriptBackup, scriptFile);
+                            } catch (IOException rollbackError) {
+                                preserveBackup = true;
+                                saveError.addSuppressed(rollbackError);
+                                throw new IOException("保存 info.asm 失败，Lua 回滚也失败；备份保留在 " + scriptBackup,
+                                        saveError);
+                            }
+                        }
+                        throw saveError;
+                    }
+                }
             }
             skin = updated;
-            sourceDigest = replacementDigest;
+            sourceDigest = archive || asmChanged ? replacementDigest : sourceDigest;
         } finally {
-            Files.deleteIfExists(temporary);
+            if (temporary != null) Files.deleteIfExists(temporary);
+            if (scriptTemporary != null) Files.deleteIfExists(scriptTemporary);
+            if (scriptBackup != null && !preserveBackup) Files.deleteIfExists(scriptBackup);
+        }
+    }
+
+    private void requireScriptUnchanged(String scriptEntry, byte[] expected) throws IOException {
+        byte[] current;
+        try {
+            current = resource(scriptEntry, expected.length);
+        } catch (IOException error) {
+            throw new IOException("Lua 文件已被其他程序修改或无法读取，请重新打开: " + scriptEntry, error);
+        }
+        if (current == null) throw new IOException("引用的 Lua 文件不存在: " + scriptEntry);
+        if (!Arrays.equals(expected, current)) {
+            throw new IOException("Lua 文件已被其他程序修改，请重新打开: " + scriptEntry);
+        }
+    }
+
+    private static void copyPermissions(Path source, Path target) throws IOException {
+        try {
+            Set<PosixFilePermission> permissions = Files.getPosixFilePermissions(source);
+            Files.setPosixFilePermissions(target, permissions);
+        } catch (UnsupportedOperationException ignored) {
+            // Filesystems without POSIX permissions retain their default replacement behavior.
+        }
+    }
+
+    private static void moveReplacing(Path source, Path destination) throws IOException {
+        try {
+            Files.move(source, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+            Files.move(source, destination, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
@@ -193,13 +311,13 @@ public final class MspSkinDocument {
         }
     }
 
-    private static ZipEntry copyEntry(ZipEntry old, boolean isAsm) {
+    private static ZipEntry copyEntry(ZipEntry old, boolean replaced) {
         ZipEntry copy = new ZipEntry(old.getName());
         if (old.getTime() >= 0) copy.setTime(old.getTime());
         if (old.getLastAccessTime() != null) copy.setLastAccessTime(old.getLastAccessTime());
         if (old.getCreationTime() != null) copy.setCreationTime(old.getCreationTime());
         if (old.getComment() != null) copy.setComment(old.getComment());
-        if (!isAsm) {
+        if (!replaced) {
             if (old.getExtra() != null) copy.setExtra(old.getExtra());
             copy.setMethod(old.getMethod());
             if (old.getMethod() == ZipEntry.STORED) {
