@@ -212,7 +212,10 @@ namespace Sentnet.Toolchain.UnityAutomation.Editor
                 var factoryCount = 0;
                 foreach (var factory in factories)
                 {
-                    if (factory.targetLayer != SkinLayer.Background && factory.targetLayer != SkinLayer.Above)
+                    if (factory.targetLayer != SkinLayer.Background &&
+                        factory.targetLayer != SkinLayer.PlayFieldBelow &&
+                        factory.targetLayer != SkinLayer.PlayFieldAbove &&
+                        factory.targetLayer != SkinLayer.Above)
                         continue;
                     factoryCount++;
                     foreach (var module in factory.GetComponentsInChildren<SkinRuntimeModule>(true))
