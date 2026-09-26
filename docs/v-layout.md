@@ -1,6 +1,6 @@
 # Malody V 静态布局校准
 
-截至 2026-09-26，“布局概览”只投影背景层（1）和顶层（4）的静态自定义图片。参考视口为 1920×1080；平台默认 Windows，可切换 iOS／Android。它用于检查参数和资源，不是游戏运行截图。
+截至 2026-09-26，“布局概览”只投影背景层（1）和顶层（4）的静态自定义图片。参考视口为 1920×1080；平台默认 Windows，可切换 iOS／Android。可拖动图片来修改原组件的 `dx`／`dy` 偏移量，点击“保存皮肤”才写回包。拖拽保留原有 X／Y 锚点、单位、尺寸及其他字段。它用于检查参数和资源，不是游戏运行截图。
 
 ## 依据
 
@@ -8,7 +8,9 @@
 - Emiria `Assets/Malody/Scripts/Scene/Play/Skin/SkinRuntime.cs` 的 `Prepare` 按禁用状态、场景条件、模块有效性筛选并按 `Param.Order` 排序；`IsSceneMatch` 的 Width、Height、Ratio、Platform 使用 `ParentSize` 和平台值。`ScenePlay.cs` 的 `PrepareSkin` 把 `frontCanvas` 矩形赋给 `ParentSize`；`SkinUtil.Runtime.cs` 定义条件比较方式。
 - 在 Unity 2023.2.20f1 的 `PlayModeKey.unity` 中，通过 Editor Bridge 检查层级和 `RectTransform`：Background、Foreground 是 RootPlay 的直接子节点，均有 CanvasScaler；Below、Above 位于 Track 3D → Track Scale → Track Rect → Track Anchor → Track 下，没有 CanvasScaler。在当时的 Editor Game View，背景／顶层宽约 1916.9、高 1080；游玩区上下层为 1680×20000。该尺寸是当次视口的观察值，不能当作所有设备的固定值。检查结束后已关闭附加打开的 PlayModeKey 场景。
 
-因此层 2／3 不能套用全屏画布的投影。场景条件仅对 Width、Height、Ratio、Platform 在选定参考视口下求值；其余需要游玩模式、赛道设置、谱面或玩家状态的条件标记为“无法静态判定”，不猜测显示结果。参考视口并不表示某台设备的实际 `frontCanvas` 尺寸。
+因此层 2／3 不能套用全屏画布的投影。Key 模式下，模块的直接父容器是 Below／Above；两者位于 `Content → Track → Track Anchor → Track Rect → Track Scale → Track 3D` 变换链内。`PlayTrack3D.prefab` 的 Track 高约 20000，宽度还会被 `UIRelativeSize` 按父尺寸和曲线改写；`CanvasScalerFOV` 随相机像素尺寸调整 FOV 与缩放。因此场景 YAML 中的尺寸不是稳定的游戏屏幕坐标。下一步若做局部赛道预览，必须把场景条件的视口尺寸与模块父容器的局部尺寸分开，再用固定配置的 Unity PlayMode 画面校验投影。
+
+场景条件仅对 Width、Height、Ratio、Platform 在选定参考视口下求值；其余需要游玩模式、赛道设置、谱面或玩家状态的条件标记为“无法静态判定”，不猜测显示结果。参考视口并不表示某台设备的实际 `frontCanvas` 尺寸。
 
 ## 复查入口
 

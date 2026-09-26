@@ -111,5 +111,10 @@ final class VSkinEditModel {
                     module.hasImage() ? Float.toString(module.getImage().getHeight()) : "",
                     Integer.toString(param.getAlpha()), Integer.toString(param.getRotate()));
         }
+
+        ModuleFields withOffsets(float dx, float dy) {
+            return new ModuleFields(name, resource, x, y, Float.toString(dx),
+                    Float.toString(dy), width, height, alpha, rotate);
+        }
     }
 }

@@ -34,6 +34,7 @@ final class VSceneLayout {
 
     record Placement(double left, double top, double width, double height,
                      double pivotX, double pivotY, int rotate, double opacity) { }
+    record Offsets(float dx, float dy) { }
 
     private VSceneLayout() { }
 
@@ -139,6 +140,23 @@ final class VSceneLayout {
         return new Placement(x - width * pivotX,
                 canvasHeight - y - height * (1 - pivotY), width, height,
                 pivotX, pivotY, param.getRotate(), Math.max(0, Math.min(1, param.getAlpha() / 100d)));
+    }
+
+    /** Translate a drag on the preview canvas back to the module's offset units. */
+    static Offsets movedOffsets(SkinFile.Module module, SceneContext context,
+                                double canvasWidth, double canvasHeight, double deltaX, double deltaY) {
+        if (!supports(module, context) || !Double.isFinite(deltaX) || !Double.isFinite(deltaY)
+                || canvasWidth <= 0 || canvasHeight <= 0)
+            throw new IllegalArgumentException("不支持该图片拖拽");
+        SkinFile.ModuleParam param = module.getParam();
+        double unit = canvasHeight / 1080d;
+        double dx = param.getDx() + (param.getDxu() == SkinFile.ModuleParamUnit.Percent
+                ? deltaX * 100 / canvasWidth : deltaX / unit);
+        double dy = param.getDy() - (param.getDyu() == SkinFile.ModuleParamUnit.Percent
+                ? deltaY * 100 / canvasHeight : deltaY / unit);
+        if (!Double.isFinite(dx) || !Double.isFinite(dy) || Math.abs(dx) > Float.MAX_VALUE
+                || Math.abs(dy) > Float.MAX_VALUE) throw new IllegalArgumentException("拖动后偏移量超出范围");
+        return new Offsets((float) dx, (float) dy);
     }
 
     private static boolean supportedUnit(SkinFile.ModuleParamUnit unit) {

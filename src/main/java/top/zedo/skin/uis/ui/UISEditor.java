@@ -36,8 +36,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 public class UISEditor extends HBox {
 
@@ -45,6 +47,7 @@ public class UISEditor extends HBox {
     private DragSession dragSession;
     private boolean previewValid = true;
     private final Map<Tab, MszWorkspace> packageTabs = new HashMap<>();
+    private final Set<VEditorPane> vEditors = new HashSet<>();
     Label previewStatus = new Label();
     UISCanvas uisCanvas = new UISCanvas() {
         {
@@ -430,6 +433,12 @@ public class UISEditor extends HBox {
                 }
             }
             stage.setOnCloseRequest(event -> {
+                for (VEditorPane editor : uISEditor.vEditors) {
+                    if (!editor.canClose()) {
+                        event.consume();
+                        return;
+                    }
+                }
                 for (Tab tab : uISEditor.tabPane.getTabs()) {
                     if (tab.getContent() instanceof VirtualizedScrollPane<?> pane
                             && pane.getContent() instanceof UISCodeArea codeArea) {
@@ -494,6 +503,11 @@ public class UISEditor extends HBox {
                 Stage window = new Stage();
                 window.setScene(new Scene(editor, 1190, 760));
                 window.setTitle("Malody V · " + path.getFileName());
+                window.setOnCloseRequest(event -> {
+                    if (!editor.canClose()) event.consume();
+                });
+                window.setOnHidden(_ -> vEditors.remove(editor));
+                vEditors.add(editor);
                 window.show();
             } catch (IOException error) {
                 new Alert(Alert.AlertType.ERROR, "无法打开 V 皮肤: " + error.getMessage()).showAndWait();

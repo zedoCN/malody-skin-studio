@@ -103,6 +103,27 @@ class VSceneLayoutTest {
                 VSceneLayout.sceneMatch(ratioOccur, VSceneLayout.REFERENCE));
     }
 
+    @Test void draggingPreservesAnchorAndMovesProjectedImageByThePointerDelta() {
+        for (SkinFile.ModuleParamUnit unit : new SkinFile.ModuleParamUnit[]{
+                SkinFile.ModuleParamUnit.Percent, SkinFile.ModuleParamUnit.Unit}) {
+            SkinFile.Module original = image().setParam(SkinFile.ModuleParam.newBuilder()
+                    .setLayer(4).setAlpha(100).setPivot(SkinFile.ModuleParamAnchor.Middle)
+                    .setX(50).setY(50).setDx(10).setDy(5).setDxu(unit).setDyu(unit)).build();
+            VSkinEditModel model = new VSkinEditModel(SkinFile.newBuilder().addModules(original).build());
+            VSceneLayout.Placement before = VSceneLayout.project(original, 640, 360, 200, 100);
+            VSceneLayout.Offsets moved = VSceneLayout.movedOffsets(original, VSceneLayout.REFERENCE,
+                    640, 360, 64, -36);
+            model.updateModule(0, model.fields(0).withOffsets(moved.dx(), moved.dy()));
+            SkinFile.Module afterModule = model.module(0);
+            VSceneLayout.Placement after = VSceneLayout.project(afterModule, 640, 360, 200, 100);
+            assertEquals(64, after.left() - before.left(), 0.001);
+            assertEquals(-36, after.top() - before.top(), 0.001);
+            assertEquals(original.getParam().getX(), afterModule.getParam().getX());
+            assertEquals(original.getParam().getY(), afterModule.getParam().getY());
+            assertEquals(original.getImage(), afterModule.getImage());
+        }
+    }
+
     @Test void realPackagesHaveProjectableStaticImages() throws Exception {
         String paths = System.getProperty("malody.v.samples", "");
         Assumptions.assumeFalse(paths.isBlank(), "Pass -Dmalody.v.samples=path1:path2");

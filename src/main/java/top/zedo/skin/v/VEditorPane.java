@@ -2,8 +2,10 @@ package top.zedo.skin.v;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Cursor;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
@@ -32,6 +34,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 /** Module and metadata editor for a Malody V skin. */
 public final class VEditorPane extends BorderPane {
@@ -142,7 +145,7 @@ public final class VEditorPane extends BorderPane {
         sceneTools.setAlignment(Pos.CENTER_LEFT);
         VBox sceneBox = new VBox(10, new Label("同层静态自定义图片布局概览 · 参考视口 1920×1080"), sceneTools,
                 new ScrollPane(sceneCanvas), sceneStatus,
-                new Label("仅全屏背景／顶层；按视口和平台筛选场景条件。游戏内动态效果不参与。"));
+                new Label("可拖动静态图片调整偏移量，点击“保存皮肤”写回。游戏内动态效果不参与。"));
         sceneBox.setPadding(new Insets(12));
         Tab resourceTab = new Tab("单资源", imageBox);
         Tab sceneTab = new Tab("布局概览", sceneBox);
@@ -273,6 +276,50 @@ public final class VEditorPane extends BorderPane {
                 node.setOpacity(at.opacity());
                 node.getTransforms().add(new Rotate(-at.rotate(),
                         at.width() * at.pivotX(), at.height() * (1 - at.pivotY())));
+                node.setCursor(Cursor.MOVE);
+                node.setPickOnBounds(true);
+                double[] drag = new double[4];
+                boolean[] dragging = {false};
+                node.setOnMousePressed(event -> {
+                    if (!applyModule()) return;
+                    modules.getSelectionModel().select(index);
+                    if (!draft.module(index).equals(module)) { refreshScene(); return; }
+                    drag[0] = event.getSceneX();
+                    drag[1] = event.getSceneY();
+                    drag[2] = node.getLayoutX();
+                    drag[3] = node.getLayoutY();
+                    dragging[0] = true;
+                    event.consume();
+                });
+                node.setOnMouseDragged(event -> {
+                    if (!dragging[0]) return;
+                    node.setLayoutX(drag[2] + event.getSceneX() - drag[0]);
+                    node.setLayoutY(drag[3] + event.getSceneY() - drag[1]);
+                    event.consume();
+                });
+                node.setOnMouseReleased(event -> {
+                    if (!dragging[0]) return;
+                    dragging[0] = false;
+                    double deltaX = event.getSceneX() - drag[0];
+                    double deltaY = event.getSceneY() - drag[1];
+                    if (Math.abs(deltaX) < .5 && Math.abs(deltaY) < .5) {
+                        node.setLayoutX(drag[2]);
+                        node.setLayoutY(drag[3]);
+                        return;
+                    }
+                    String failure = null;
+                    try {
+                        VSceneLayout.Offsets offsets = VSceneLayout.movedOffsets(draft.module(index), context,
+                                640, 360, deltaX, deltaY);
+                        draft.updateModule(index, draft.fields(index).withOffsets(offsets.dx(), offsets.dy()));
+                        if (currentModule == index) showModule(index);
+                    } catch (IllegalArgumentException error) {
+                        failure = error.getMessage();
+                    }
+                    refreshScene();
+                    if (failure != null) sceneStatus.setText("拖动失败：" + failure);
+                    event.consume();
+                });
                 sceneCanvas.getChildren().add(node);
                 shown++;
             } catch (IllegalArgumentException error) { unsupported++; }
@@ -328,16 +375,34 @@ public final class VEditorPane extends BorderPane {
         }
     }
 
-    private void save() {
-        if (!applyModule()) return;
+    /** Preserve edits when the separate V editor window is closed. */
+    public boolean canClose() {
+        if (!applyModule()) return false;
+        draft.updateMetadata(title.getText(), creator.getText(), description.getText(), cover.getText());
+        if (draft.skin().equals(document.skin())) return true;
+        ButtonType saveChoice = new ButtonType("保存");
+        ButtonType discardChoice = new ButtonType("不保存");
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, "V 皮肤有未保存的修改。",
+                saveChoice, discardChoice, ButtonType.CANCEL);
+        confirm.setHeaderText("关闭皮肤编辑器");
+        if (getScene() != null) confirm.initOwner(getScene().getWindow());
+        Optional<ButtonType> choice = confirm.showAndWait();
+        if (choice.isEmpty() || choice.get() == ButtonType.CANCEL) return false;
+        return choice.get() == discardChoice || save();
+    }
+
+    private boolean save() {
+        if (!applyModule()) return false;
         draft.updateMetadata(title.getText(), creator.getText(), description.getText(), cover.getText());
         try {
             document.save(draft.skin());
             refreshScene();
             if (getScene() != null && getScene().getWindow() instanceof Stage stage) stage.setTitle("Malody V · " + title.getText());
             alert("已保存", document.path().toString());
+            return true;
         } catch (IOException error) {
             alert("保存失败", error.getMessage());
+            return false;
         }
     }
 
