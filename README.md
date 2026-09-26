@@ -41,7 +41,7 @@ Windows 使用 `mvnw.cmd`。首次运行会下载 Maven 和 JavaFX 依赖。应�
 
 `--snapshot-v` 接受 `.msp`、皮肤目录或目录内的 `info.asm`；图层必须显式指定为全屏背景 `1` 或顶层 `4`，平台为 `windows`、`ios`、`android`，尺寸为输出及场景条件使用的 `宽x高`。路径包含空格时可传 `file:` URI，例如 `file:///Users/me/Downloads/skin%20copy.msp`。输出 PNG 背景透明，与 V 编辑器“布局概览”共用静态图片筛选、排序、资源读取和布局；终端会报告跳过数量。Lua、动画、动态条件和赛道层未包含，PNG 不能代表游戏完整运行画面。Unity 运行画面的对照条件见 [V 运行画面对照](docs/v-runtime-compare.md)。
 
-`--snapshot-ui` 以固定 1440×900 尺寸导出完整工作区，适合检查初始页（`--start`）、`.mui`、`.msp` 和 V 皮肤目录的排版与样式；它不会修改皮肤文件。路径含空格时可用 `file:` URI。
+`--snapshot-ui` 以固定 1440×900 尺寸导出完整工作区，适合检查初始页（`--start`）、`.mui`、`.msz`、`.msp` 和 V 皮肤目录的排版与样式；它不会修改皮肤文件，结束时会清理 `.msz` 的预览临时目录。路径含空格时可用 `file:` URI。
 
 需要复核真实编辑闭环时运行 `scripts/check-ui-flow.sh`。它在临时皮肤上检查 4.x 重复打开、保存冲突、V 目录打开，以及 V 属性自动预览、手动保存和无效输入提示，不碰用户皮肤。
 

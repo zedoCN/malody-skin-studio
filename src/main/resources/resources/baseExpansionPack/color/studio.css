@@ -125,9 +125,14 @@
     -fx-background-color: -studio-bg;
 }
 
+.v-editor .v-scene-viewport,
+.v-editor .v-scene-viewport > .viewport {
+    -fx-background-color: -studio-bg;
+}
+
 .v-editor .label {
     -fx-text-fill: -studio-text;
-    -fx-font-size: 12px;
+    -fx-font-size: 13px;
 }
 
 .v-editor .v-section-title {
@@ -187,6 +192,7 @@
 .v-editor .list-cell {
     -fx-background-color: transparent;
     -fx-text-fill: -studio-text;
+    -fx-font-size: 13px;
     -fx-padding: 7 9 7 9;
 }
 
@@ -275,6 +281,10 @@
     -fx-padding: 7 10 7 10;
 }
 
+.v-editor .v-scene-status {
+    -fx-text-fill: -studio-muted;
+}
+
 /* 4.x editor controls share the workspace palette; the skin canvas keeps its own colors. */
 .mui-editor .mui-sidebar,
 .mui-editor .mui-toolbar,
@@ -313,6 +323,12 @@
 .mui-editor .mui-toolbar .label,
 .mui-editor .mui-toolbar .check-box {
     -fx-text-fill: -studio-muted;
+}
+
+.mui-editor .mui-toolbar .mui-toolbar-title {
+    -fx-text-fill: -studio-text;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
 }
 
 .mui-editor .mui-toolbar .button,

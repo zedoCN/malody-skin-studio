@@ -32,6 +32,14 @@ public enum ResolutionInfo {
 
     @Override
     public String toString() {
-        return name + " " + String.format("%.4f", aspectRatio);
+        return switch (this) {
+            case IPAD -> "iPad mini · 4:3";
+            case IPAD2 -> "iPad 12.9″ · 4:3";
+            case IPAD3 -> "iPad 11″ · 1.43:1";
+            case IPAD4 -> "iPad mini 6 · 16:10";
+            case PHONE -> "手机 · 1.71:1";
+            case PHONE_LONG -> "长屏手机 · 20:9";
+            case PC -> "电脑 · 16:9";
+        };
     }
 }

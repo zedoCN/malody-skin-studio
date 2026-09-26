@@ -17,11 +17,13 @@ import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.shape.Rectangle;
@@ -85,8 +87,10 @@ public final class VEditorPane extends BorderPane {
         draft = new VSkinEditModel(document.skin());
         runtimeCompare = new VRuntimeComparePane(document);
 
-        heading = new Label("Malody V · " + document.path().getFileName());
+        String skinTitle = draft.metadata().getTitle();
+        heading = new Label("Malody V · " + (skinTitle.isBlank() ? document.path().getFileName() : skinTitle));
         heading.setMaxWidth(Double.MAX_VALUE);
+        heading.setTooltip(new Tooltip(document.path().toString()));
         Button save = new Button("保存皮肤");
         save.setOnAction(_ -> save());
         save.getStyleClass().add("v-primary-action");
@@ -186,13 +190,23 @@ public final class VEditorPane extends BorderPane {
                 new Label("平台"), scenePlatform);
         sceneTools.setAlignment(Pos.CENTER_LEFT);
         selectedSceneStatus.setWrapText(true);
+        selectedSceneStatus.setMaxWidth(Double.MAX_VALUE);
         selectedSceneStatus.getStyleClass().add("v-selected-status");
+        sceneStatus.setWrapText(true);
+        sceneStatus.setMaxWidth(Double.MAX_VALUE);
+        sceneStatus.getStyleClass().add("v-scene-status");
+        StackPane sceneSurface = new StackPane(sceneCanvas);
+        ScrollPane sceneViewport = new ScrollPane(sceneSurface);
+        sceneViewport.getStyleClass().add("v-scene-viewport");
+        sceneViewport.setPannable(true);
+        sceneViewport.viewportBoundsProperty().addListener((_, _, bounds) ->
+                sceneSurface.setMinSize(bounds.getWidth(), bounds.getHeight()));
         VBox sceneBox = new VBox(10, sectionTitle("布局概览"),
                 new Label("原始参数 · 参考视口 1920×1080 · 不执行 Lua"), sceneTools,
-                new ScrollPane(sceneCanvas), selectedSceneStatus, sceneStatus,
-                new Label("可拖动图片调整偏移量；“保存皮肤”才写入文件。此画布不执行 Lua。"));
+                sceneViewport, selectedSceneStatus, sceneStatus);
         sceneBox.getStyleClass().add("v-scene-panel");
         sceneBox.setPadding(new Insets(12));
+        VBox.setVgrow(sceneViewport, Priority.ALWAYS);
         Tab resourceTab = new Tab("单资源", imageBox);
         Tab sceneTab = new Tab("布局概览", sceneBox);
         luaBaseline = VLuaSource.load(document);
@@ -262,8 +276,19 @@ public final class VEditorPane extends BorderPane {
             showModule(next);
             if (previous != null && !previous.equals(draft.module(oldIndex.intValue()))) refreshScene();
         });
-        if (!modules.getItems().isEmpty()) modules.getSelectionModel().selectFirst();
         refreshScene();
+        if (!modules.getItems().isEmpty()) {
+            int initialModule = sceneNodes.entrySet().stream()
+                    .filter(entry -> {
+                        Bounds bounds = entry.getValue().getBoundsInParent();
+                        return bounds.getMinX() >= 0 && bounds.getMaxX() <= 640
+                                && bounds.getMinY() >= 0 && bounds.getMaxY() <= 360;
+                    })
+                    .mapToInt(Map.Entry::getKey).min()
+                    .orElseGet(() -> sceneNodes.keySet().stream().mapToInt(Integer::intValue).min().orElse(0));
+            modules.getSelectionModel().select(initialModule);
+            modules.scrollTo(Math.max(0, initialModule - 2));
+        }
         watchEdits();
         previewDebounce.setOnFinished(_ -> {
             if (!applyModule(false)) return;
@@ -387,6 +412,7 @@ public final class VEditorPane extends BorderPane {
             return;
         }
         SkinFile.Module module = draft.module(index);
+        moduleSearchStatus.setText("已选中组件 #" + (index + 1) + "；右侧可编辑属性");
         SkinFile.ModuleParam param = module.getParam();
         VSkinEditModel.ModuleFields fields = draft.fields(index);
         moduleKind.setText("用途 " + module.getUsage() + " · " + moduleTypeName(module.getType())
@@ -702,7 +728,8 @@ public final class VEditorPane extends BorderPane {
             luaStatus.setText(luaBaseline.diagnostic());
             refreshScene();
             runtimeCompare.refreshAfterSave();
-            heading.setText("Malody V · " + title.getText());
+            heading.setText("Malody V · " + (title.getText().isBlank()
+                    ? document.path().getFileName() : title.getText()));
             markSaved();
             return true;
         } catch (IOException error) {

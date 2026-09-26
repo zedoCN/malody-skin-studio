@@ -64,6 +64,7 @@ public class UISEditor extends HBox {
                         if (code.getContent() instanceof UISCodeArea codeArea) {
                             showSaveStatus(codeArea);
                             try {
+                                fitPreview = true;
                                 uisCanvas.loadSkin(codeArea.getFile());
                                 previewValid = true;
                                 previewStatus.setText("");
@@ -99,7 +100,8 @@ public class UISEditor extends HBox {
     ChoiceBox<DeviceType> deviceTypeChoiceBox = new ChoiceBox<>() {
         {
             getItems().addAll(DeviceType.values());
-            setPrefWidth(60);
+            setPrefWidth(90);
+            setTooltip(new Tooltip("决定 @if 等平台条件的预览结果"));
             getSelectionModel().selectedItemProperty().addListener((observable, oldValue, newValue) -> {
                 try {
                     uisCanvas.setDeviceType(newValue);
@@ -118,7 +120,8 @@ public class UISEditor extends HBox {
     ChoiceBox<ResolutionInfo> resolutionChoiceBox = new ChoiceBox<>() {
         {
             getItems().addAll(ResolutionInfo.values());
-            setPrefWidth(100);
+            setPrefWidth(155);
+            setTooltip(new Tooltip("选择预览用的参考屏幕比例"));
             getSelectionModel().selectedItemProperty().addListener((observable, oldValue, newValue) -> {
                 deviceTypeChoiceBox.setValue(newValue.getDevice());
                 try {
@@ -148,6 +151,7 @@ public class UISEditor extends HBox {
             });
             getSelectionModel().selectFirst();
             setPrefWidth(80);
+            setTooltip(new Tooltip("仅切换画布测量尺单位，不修改皮肤坐标"));
         }
     };
     Label scalingFactorLabel = new Label("缩放: 100%") {
@@ -190,13 +194,27 @@ public class UISEditor extends HBox {
             });
         }
     };
+    Label codeHeading = new Label("UIS 脚本");
+    Label previewHeading = new Label("画面预览");
+    Region toolbarSpacer = new Region();
+    Region previewToolbarSpacer = new Region();
     /**
      * 顶部工具栏
      */
-    HBox topToolbar = new HBox(resolutionChoiceBox, deviceTypeChoiceBox, unitChoiceBox, scalingFactorLabel, scalingFactorSlider, fitPreviewButton, openFileButton, saveFileButton) {
+    HBox topToolbar = new HBox(codeHeading, resolutionChoiceBox, deviceTypeChoiceBox, unitChoiceBox,
+            toolbarSpacer, openFileButton, saveFileButton) {
         {
             setMinHeight(40);
             setBorder(new Border(new BorderStroke(Color.WHITE, BorderStrokeStyle.SOLID, CornerRadii.EMPTY, new BorderWidths(0, 0, 1, 0), new Insets(0))));
+            setAlignment(Pos.CENTER_LEFT);
+            setSpacing(8);
+            setPadding(new Insets(0, 8, 0, 8));
+        }
+    };
+    HBox previewToolbar = new HBox(previewHeading, previewToolbarSpacer,
+            scalingFactorLabel, scalingFactorSlider, fitPreviewButton) {
+        {
+            setMinHeight(40);
             setAlignment(Pos.CENTER_LEFT);
             setSpacing(8);
             setPadding(new Insets(0, 8, 0, 8));
@@ -281,11 +299,17 @@ public class UISEditor extends HBox {
     };
     StackPane previewSurface = new StackPane(uisCanvas);
     ScrollPane previewPane = new ScrollPane(previewSurface);
+    VBox previewColumn = new VBox(previewToolbar, previewPane);
 
     public UISEditor() {
         getStyleClass().add("mui-editor");
         sideVBox.getStyleClass().add("mui-sidebar");
         topToolbar.getStyleClass().add("mui-toolbar");
+        previewToolbar.getStyleClass().add("mui-toolbar");
+        codeHeading.getStyleClass().add("mui-toolbar-title");
+        previewHeading.getStyleClass().add("mui-toolbar-title");
+        HBox.setHgrow(toolbarSpacer, Priority.ALWAYS);
+        HBox.setHgrow(previewToolbarSpacer, Priority.ALWAYS);
         feedbackBar.getStyleClass().add("mui-feedback");
         bottomToolbar.getStyleClass().add("mui-toolbar");
         tabPane.getStyleClass().add("mui-tabs");
@@ -298,6 +322,8 @@ public class UISEditor extends HBox {
         previewSurface.setPadding(new Insets(16));
         previewPane.setPannable(true);
         previewPane.setMinSize(0, 0);
+        previewColumn.setMinWidth(0);
+        VBox.setVgrow(previewPane, Priority.ALWAYS);
         previewPane.viewportBoundsProperty().addListener((_, _, bounds) -> {
             previewSurface.setMinSize(bounds.getWidth(), bounds.getHeight());
             fitPreviewToViewport();
@@ -347,8 +373,8 @@ public class UISEditor extends HBox {
 
 
         animationTimer.start();
-        HBox.setHgrow(previewPane, Priority.ALWAYS);
-        getChildren().addAll(sideVBox, previewPane);
+        HBox.setHgrow(previewColumn, Priority.ALWAYS);
+        getChildren().addAll(sideVBox, previewColumn);
     }    /*Button reloadButton = new Button("重载") {
         {
             setOnAction(event -> uisCanvas.updateSkin());

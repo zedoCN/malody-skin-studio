@@ -1,7 +1,7 @@
 package top.zedo.skin;
 
 public enum DeviceType {
-    MAC("Mac"), WINDOWS("Win"), IOS("平板"), ANDROID("手机");
+    MAC("macOS"), WINDOWS("Windows"), IOS("iOS"), ANDROID("Android");
     final String name;
 
     DeviceType(String name) {

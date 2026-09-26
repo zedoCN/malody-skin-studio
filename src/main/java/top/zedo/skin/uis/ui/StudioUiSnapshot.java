@@ -31,9 +31,10 @@ final class StudioUiSnapshot {
         CountDownLatch done = new CountDownLatch(1);
         AtomicReference<Throwable> failure = new AtomicReference<>();
         Platform.startup(() -> {
+            SkinStudioWindow workspace = null;
             try {
                 UISEditor muiEditor = new UISEditor();
-                SkinStudioWindow workspace = new SkinStudioWindow(muiEditor);
+                workspace = new SkinStudioWindow(muiEditor);
                 Scene scene = new Scene(workspace, 1440, 900);
                 scene.getStylesheets().addAll("resources/baseExpansionPack/color/style.css",
                         "resources/baseExpansionPack/color/dark.css",
@@ -61,7 +62,14 @@ final class StudioUiSnapshot {
             } catch (Throwable error) {
                 failure.set(error);
             } finally {
-                done.countDown();
+                try {
+                    if (workspace != null && !workspace.canCloseAll())
+                        failure.compareAndSet(null, new IOException("截图后无法清理皮肤工作区"));
+                } catch (Throwable cleanupError) {
+                    failure.compareAndSet(null, cleanupError);
+                } finally {
+                    done.countDown();
+                }
             }
         });
         try {
