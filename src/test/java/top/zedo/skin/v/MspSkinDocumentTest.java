@@ -10,7 +10,9 @@ import java.io.IOException;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.Arrays;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
@@ -69,6 +71,56 @@ class MspSkinDocumentTest {
 
         assertEquals("B", MspSkinDocument.open(folder).skin().getMeta().getTitle());
         assertEquals("derived cache", Files.readString(folder.resolve("info.json")));
+    }
+
+    @Test
+    void rejectsExternalPackageChangeWithoutOverwritingIt() throws IOException {
+        Path packageFile = directory.resolve("external.msp");
+        writePackage(packageFile, "Original");
+        MspSkinDocument document = MspSkinDocument.open(packageFile);
+        writePackage(packageFile, "External");
+        byte[] external = Files.readAllBytes(packageFile);
+
+        IOException error = assertThrows(IOException.class, () -> document.save(document.skin().toBuilder()
+                .setMeta(document.skin().getMeta().toBuilder().setTitle("Editor")).build()));
+        assertTrue(error.getMessage().contains("其他程序修改"));
+        assertArrayEquals(external, Files.readAllBytes(packageFile));
+        assertEquals("External", MspSkinDocument.open(packageFile).skin().getMeta().getTitle());
+    }
+
+    @Test
+    void rejectsExternalFolderChangeAndAllowsRepeatedOwnSaves() throws IOException {
+        Path folder = Files.createDirectory(directory.resolve("external-folder"));
+        Path asm = folder.resolve("info.asm");
+        SkinFile original = SkinFile.newBuilder().setMeta(SkinFile.Meta.newBuilder().setTitle("Original")).build();
+        Files.write(asm, original.toByteArray());
+        boolean posix = Files.getFileStore(asm).supportsFileAttributeView("posix");
+        Set<PosixFilePermission> permissions = posix ? Files.getPosixFilePermissions(asm) : null;
+        MspSkinDocument document = MspSkinDocument.open(folder);
+        document.save(original.toBuilder().setMeta(original.getMeta().toBuilder().setTitle("First")).build());
+        if (posix) assertEquals(permissions, Files.getPosixFilePermissions(asm));
+        document.save(document.skin().toBuilder()
+                .setMeta(document.skin().getMeta().toBuilder().setTitle("Second")).build());
+        assertEquals("Second", MspSkinDocument.open(folder).skin().getMeta().getTitle());
+
+        SkinFile external = original.toBuilder().setMeta(original.getMeta().toBuilder()
+                .setTitle("External")).build();
+        Files.write(asm, external.toByteArray());
+        assertThrows(IOException.class, () -> document.save(document.skin().toBuilder()
+                .setMeta(document.skin().getMeta().toBuilder().setTitle("Third")).build()));
+        assertArrayEquals(external.toByteArray(), Files.readAllBytes(asm));
+    }
+
+    private static void writePackage(Path file, String title) throws IOException {
+        SkinFile skin = SkinFile.newBuilder().setMeta(SkinFile.Meta.newBuilder().setTitle(title)).build();
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(file))) {
+            zip.putNextEntry(new ZipEntry("info.asm"));
+            skin.writeTo(zip);
+            zip.closeEntry();
+            zip.putNextEntry(new ZipEntry("asset.png"));
+            zip.write(new byte[]{1, 2, 3});
+            zip.closeEntry();
+        }
     }
 
     @Test

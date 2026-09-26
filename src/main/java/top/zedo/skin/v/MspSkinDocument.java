@@ -6,11 +6,16 @@ import top.zedo.skin.v.proto.SkinVProto.SkinFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.Enumeration;
 import java.util.Objects;
+import java.util.Arrays;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
@@ -24,21 +29,30 @@ public final class MspSkinDocument {
     private final boolean archive;
     private final String entryPrefix;
     private SkinFile skin;
+    private byte[] sourceDigest;
 
-    private MspSkinDocument(Path path, boolean archive, String entryPrefix, SkinFile skin) {
+    private MspSkinDocument(Path path, boolean archive, String entryPrefix, SkinFile skin,
+                            byte[] sourceDigest) {
         this.path = path;
         this.archive = archive;
         this.entryPrefix = entryPrefix;
         this.skin = skin;
+        this.sourceDigest = sourceDigest;
     }
 
     public static MspSkinDocument open(Path selected) throws IOException {
         Path path = selected.toAbsolutePath().normalize();
         if (path.getFileName().toString().equalsIgnoreCase("info.asm")) path = path.getParent();
+        path = path.toRealPath();
         if (Files.isDirectory(path)) {
-            byte[] data = readBounded(Files.newInputStream(path.resolve("info.asm")), MAX_ASM_BYTES);
-            return new MspSkinDocument(path, false, "", parse(data));
+            Path source = path.resolve("info.asm");
+            byte[] before = digest(source);
+            byte[] data = readBounded(Files.newInputStream(source), MAX_ASM_BYTES);
+            SkinFile skin = parse(data);
+            if (!Arrays.equals(before, digest(source))) throw new IOException("读取期间 info.asm 已改变: " + source);
+            return new MspSkinDocument(path, false, "", skin, before);
         }
+        byte[] before = digest(path);
         try (ZipFile zip = new ZipFile(path.toFile())) {
             ZipEntry asm = null;
             Enumeration<? extends ZipEntry> entries = zip.entries();
@@ -52,7 +66,9 @@ public final class MspSkinDocument {
             if (asm == null) throw new IOException("MSP 中缺少 info.asm: " + path);
             byte[] data = readBounded(zip.getInputStream(asm), MAX_ASM_BYTES);
             String prefix = asm.getName().substring(0, asm.getName().length() - "info.asm".length());
-            return new MspSkinDocument(path, true, prefix, parse(data));
+            SkinFile skin = parse(data);
+            if (!Arrays.equals(before, digest(path))) throw new IOException("读取期间 MSP 已改变: " + path);
+            return new MspSkinDocument(path, true, prefix, skin, before);
         }
     }
 
@@ -108,6 +124,8 @@ public final class MspSkinDocument {
         if (updated.getMeta().getTitle().isBlank()) throw new IOException("皮肤标题不能为空");
         // A no-op save should not repack an archive or rewrite an unchanged info.asm.
         if (updated.equals(skin)) return;
+        Path destination = archive ? path : path.resolve("info.asm");
+        requireUnchanged(destination);
         Path temporary = Files.createTempFile(path.getParent(), ".malody-skin-", archive ? ".msp" : ".asm");
         try {
             if (archive) {
@@ -135,15 +153,43 @@ public final class MspSkinDocument {
             } else {
                 Files.write(temporary, updated.toByteArray());
             }
-            Path destination = archive ? path : path.resolve("info.asm");
+            requireUnchanged(destination);
+            try {
+                Set<PosixFilePermission> permissions = Files.getPosixFilePermissions(destination);
+                Files.setPosixFilePermissions(temporary, permissions);
+            } catch (UnsupportedOperationException ignored) {
+                // Filesystems without POSIX permissions retain their default replacement behavior.
+            }
+            byte[] replacementDigest = digest(temporary);
             try {
                 Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
                 Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING);
             }
             skin = updated;
+            sourceDigest = replacementDigest;
         } finally {
             Files.deleteIfExists(temporary);
+        }
+    }
+
+    private void requireUnchanged(Path source) throws IOException {
+        if (!Arrays.equals(sourceDigest, digest(source))) {
+            throw new IOException("皮肤已被其他程序修改，请重新打开: " + source);
+        }
+    }
+
+    private static byte[] digest(Path file) throws IOException {
+        try {
+            MessageDigest sha = MessageDigest.getInstance("SHA-256");
+            try (InputStream input = Files.newInputStream(file)) {
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = input.read(buffer)) != -1) sha.update(buffer, 0, count);
+            }
+            return sha.digest();
+        } catch (NoSuchAlgorithmException error) {
+            throw new IllegalStateException("JDK 缺少 SHA-256", error);
         }
     }
 
