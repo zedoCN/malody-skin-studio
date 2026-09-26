@@ -29,7 +29,7 @@ public class TextComponentRenderer extends AbstractComponentRenderer {
     @Override
     void reloadResComponent() {
         text = component.getString("text", "<<无文字>>");
-        fsize=component.getDouble("fsize", 16);
+        fsize = component.getVerticalLength("fsize", 20);
     }
 
     @Override

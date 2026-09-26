@@ -2,7 +2,7 @@
 
 马老弟音游的非官方皮肤编辑与预览工具。支持打开 4.x `.mui` 和 Malody V `.msp`／`info.asm`。`.mui` 使用 JavaFX 画布预览组件与动画、切换设备比例和时间轴；V 皮肤可编辑元数据和部分组件参数，并预览选中组件的图片资源。
 
-`.mui` 文本编辑会自动保存，也可点击“保存”或按系统保存快捷键；关闭时若保存失败会提示并保留窗口。V 编辑器使用自己的“保存”按钮。两种格式分别保留源文件中未被编辑的内容：`.mui` 的原文 section、注释、编码和行尾，以及 `.msp` 的未知 protobuf 字段和素材。当前还没有画布拖拽编辑；实现时应通过源文档定位并修改属性，不能把展开 include／条件后的预览对象直接写回文件。
+`.mui` 文本编辑会自动保存，也可点击“保存”或按系统保存快捷键；关闭时若保存失败会提示并保留窗口。保存成功但预览解析失败时，工具栏会单独提示。画布可拖动未旋转、未倾斜、未受动画或透视影响的普通图片组件；写回时核对其真实来源文件、组件段和属性行，包含 `@include` 中的属性。组合段、父组件位置和自定义锚点暂不参与拖拽。V 编辑器使用自己的“保存”按钮。两种格式分别保留源文件中未被编辑的内容：`.mui` 的原文 section、注释、编码和行尾，以及 `.msp` 的未知 protobuf 字段和素材。
 
 ## 运行
 
@@ -27,9 +27,10 @@ Windows 使用 `mvnw.cmd`。首次运行会下载 Maven 和 JavaFX 依赖。应�
 
 ```sh
 ./mvnw javafx:run '-Djavafx.args=--snapshot examples/基本.mui target/debug/basic-0.png 0 PC'
+./mvnw javafx:run '-Djavafx.args=--trace-mui examples/基本.mui target/debug/basic-0.json 0 PC'
 ```
 
-最后两个参数可省略，默认是 `0` 毫秒和 `PC`。设备比例可填 `PC`、`PHONE`、`PHONE_LONG`、`IPAD` 等 `ResolutionInfo` 枚举名；对照 Android 真机时可填 `ANDROID:2376x1152`，直接输出该像素尺寸。截图写入指定 PNG 路径；解析和资源告警仍输出在终端及 `latest.log`。此入口只渲染一帧，不启动编辑器窗口。
+最后两个参数可省略，默认是 `0` 毫秒和 `PC`。设备比例可填 `PC`、`PHONE`、`PHONE_LONG`、`IPAD` 等 `ResolutionInfo` 枚举名；对照 Android 真机时可填 `ANDROID:2376x1152`，直接输出该像素尺寸。截图写入指定 PNG 路径；`--trace-mui` 将同一帧有效组件的渲染器、坐标、原始属性和源文件行号写为 JSON，便于对照原生实现。解析和资源告警仍输出在终端及 `latest.log`。这些入口不启动编辑器窗口。
 
 批量检查 `.mui` 文件能否读取，以及查看 V 皮肤的元数据与组件：
 
@@ -45,6 +46,8 @@ Windows 使用 `mvnw.cmd`。首次运行会下载 Maven 和 JavaFX 依赖。应�
 - `src/main/java/top/zedo/skin/uis/ui`：JavaFX 编辑界面与代码区
 - `src/main/java/top/zedo/skin/uis/MuiSkinLoader.java`：读取 `.mui`、`@include` 与图片资源，生成一次加载结果
 - `src/main/java/top/zedo/skin/uis/MuiDocument.java`：保留 `.mui` 原文结构的属性编辑与保存模型
+- `src/main/java/top/zedo/skin/uis/MuiPositionEditor.java`：把预览组件的位移校验并写回其真实源属性行
+- `src/main/java/top/zedo/skin/uis/MszSkinPackage.java`：4.3.7 `.msz` 包的脚本读取与安全回写层，尚未接入图形界面
 - `src/main/java/top/zedo/skin/uis/UISSkin.java`：将加载结果同步到组件和渲染器
 - `src/main/java/top/zedo/skin/uis/component`：各类预览渲染器
 - `src/main/java/top/zedo/skin/v`：V 皮肤 `.msp`／`info.asm` 读写和基本属性编辑
@@ -60,8 +63,8 @@ Windows 使用 `mvnw.cmd`。首次运行会下载 Maven 和 JavaFX 依赖。应�
 
 Emiria 历史中找到的 UIS 解析器属于 5.0.0 原型，可用于核对 `@unit`、`w`、条件、定义与继承等规则；它不足以证明 4.3.7 的每处运行时行为。当前 `.mui` 预览保持原编辑器已接近游戏的画面作为基线。`UISPerspectiveTransform` 中的角度多项式来自本编辑器 2024 年的经验标定，未在 Emiria 原型中找到对应实现，现有测试固定了它的输出。4.x 样本中透明度常用 0–100，而 Emiria 5.0 原型按 0–255 处理，不能直接套用。
 
-4.3.7 APK 的内置 UIS 脚本及当前绘制差距见 [4.3.7 校准记录](docs/4.3.7-audit.md)。
+4.3.7 APK 的内置 UIS 脚本、真机校准及当前绘制差距见 [4.3.7 校准记录](docs/4.3.7-audit.md)；ARM64 原生解析器和组件工厂的静态取证见 [4.3.7 原生实现记录](docs/4.3.7-native.md)。`fsize` 单位与默认值、初始旋转截断和透明度量化已按原生证据修正；自定义锚点与完整透视矩阵仍需处理。
 
-连接可运行 4.3.7 的 Android 设备后，可用 [skin437_probe.py](scripts/skin437_probe.py) 生成九宫格纹理或透视九点标记、从一份 `.msz` 打包测试皮肤、推送到设备并保存带版本和皮肤选择信息的截图。操作步骤、实测坐标和已发现的脚本缓存行为写在校准记录中。
+连接可运行 4.3.7 的 Android 设备后，可用 [skin437_probe.py](scripts/skin437_probe.py) 生成九宫格纹理或透视九点标记、从一份 `.msz` 打包测试皮肤、推送到设备并保存带版本和皮肤选择信息的截图。操作步骤、实测坐标和已发现的脚本缓存行为写在校准记录中。[uis437_native.py](scripts/uis437_native.py) 可用相同 APK SHA-256 重建反汇编和属性哈希线索。
 
 V 的 `SkinFile` 结构取自 Emiria 当前源码；两份真实 `.msp` 样本已验证读取、无修改字节级回写和修改标题后的素材及未知字段保留。V 编辑器目前是元数据和部分组件参数编辑器，尚未实现完整场景合成预览、所有组件类型的编辑或游戏内导入验证。

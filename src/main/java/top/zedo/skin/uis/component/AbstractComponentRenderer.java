@@ -250,8 +250,8 @@ public abstract class AbstractComponentRenderer implements RenderInterface {
        /* pos = component.getExpressionVector("pos");
         size = component.getExpressionVector("size");*/
 
-        rotate = component.getDouble("rotate", 0);
-        opacity = component.getInt("opacity", MuiRules.FULL_OPACITY) / (double) MuiRules.FULL_OPACITY;
+        rotate = (int) (float) component.getDouble("rotate", 0);
+        opacity = MuiRules.opacityFromPercent(component.getDouble("opacity", MuiRules.FULL_OPACITY));
         scale = component.getExpressionVector("scale", "1px,1px");
         skew = component.getExpressionVector("skew");
 
