@@ -11,6 +11,9 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.zip.ZipEntry;
@@ -21,6 +24,100 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class MspSkinDocumentTest {
     @TempDir Path directory;
+
+    @Test
+    void hashesRawAsmAndAllLuaInFolderAndPackage() throws IOException {
+        SkinFile skin = SkinFile.newBuilder().setMeta(SkinFile.Meta.newBuilder().setTitle("Hash")).build();
+        byte[] asm = skin.toByteArray();
+        String asmHash = sha256(asm);
+        Path folder = Files.createDirectory(directory.resolve("skin-folder"));
+        Files.write(folder.resolve("info.asm"), asm);
+        assertEquals(asmHash, MspSkinDocument.open(folder).asmSha256());
+        assertEquals("None", MspSkinDocument.open(folder).luaHash());
+
+        Files.writeString(folder.resolve("z.lua"), "beta");
+        assertEquals("987bcab01b929eb2c07877b224215c92", MspSkinDocument.open(folder).luaHash());
+        Path nested = Files.createDirectory(folder.resolve("sub"));
+        Files.writeString(nested.resolve("a.lua"), "alpha");
+        MspSkinDocument folderDocument = MspSkinDocument.open(folder);
+        assertEquals("258acfe6378df63d0bb2c39de25b2e04", folderDocument.luaHash());
+
+        Path archive = directory.resolve("skin.msp");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+            writeEntry(zip, "skin/z.lua", "beta".getBytes(StandardCharsets.UTF_8));
+            writeEntry(zip, "skin/info.asm", asm);
+            writeEntry(zip, "skin/sub/a.lua", "alpha".getBytes(StandardCharsets.UTF_8));
+            writeEntry(zip, "other/ignored.lua", "ignored".getBytes(StandardCharsets.UTF_8));
+        }
+        MspSkinDocument packageDocument = MspSkinDocument.open(archive);
+        assertEquals(asmHash, packageDocument.asmSha256());
+        assertNotEquals(sha256(Files.readAllBytes(archive)), packageDocument.asmSha256());
+        assertEquals(folderDocument.luaHash(), packageDocument.luaHash());
+
+        Files.writeString(nested.resolve("a.lua"), "changed");
+        assertEquals(asmHash, folderDocument.asmSha256());
+        assertNotEquals(packageDocument.luaHash(), folderDocument.luaHash());
+        Files.writeString(folder.resolve("info.asm"), "changed");
+        assertThrows(IOException.class, folderDocument::asmSha256);
+        assertThrows(IOException.class, folderDocument::luaHash);
+        Files.write(archive, new byte[]{1, 2, 3});
+        assertThrows(IOException.class, packageDocument::asmSha256);
+        assertThrows(IOException.class, packageDocument::luaHash);
+    }
+
+    @Test
+    void rejectsLuaSymlinkOutsideFolderAndOversizedArchiveEntry() throws IOException {
+        SkinFile skin = SkinFile.newBuilder().setMeta(SkinFile.Meta.newBuilder().setTitle("Hash")).build();
+        Path folder = Files.createDirectory(directory.resolve("folder"));
+        Files.write(folder.resolve("info.asm"), skin.toByteArray());
+        Path external = Files.writeString(directory.resolve("external.lua"), "outside");
+        Files.createSymbolicLink(folder.resolve("outside.lua"), external);
+        assertThrows(IOException.class, () -> MspSkinDocument.open(folder).luaHash());
+
+        Path archive = directory.resolve("large.msp");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+            writeEntry(zip, "info.asm", skin.toByteArray());
+            writeEntry(zip, "large.lua", new byte[MspSkinDocument.MAX_LUA_BYTES + 1]);
+        }
+        assertThrows(IOException.class, () -> MspSkinDocument.open(archive).luaHash());
+    }
+
+    @Test
+    void rejectsDuplicateLuaArchiveEntries() throws IOException {
+        SkinFile skin = SkinFile.newBuilder().setMeta(SkinFile.Meta.newBuilder().setTitle("Hash")).build();
+        Path archive = directory.resolve("duplicates.msp");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+            writeEntry(zip, "info.asm", skin.toByteArray());
+            writeEntry(zip, "a.lua", "alpha".getBytes(StandardCharsets.UTF_8));
+            writeEntry(zip, "b.lua", "beta".getBytes(StandardCharsets.UTF_8));
+        }
+        byte[] bytes = Files.readAllBytes(archive);
+        byte[] oldName = "b.lua".getBytes(StandardCharsets.US_ASCII);
+        byte[] newName = "a.lua".getBytes(StandardCharsets.US_ASCII);
+        int replaced = 0;
+        for (int i = 0; i <= bytes.length - oldName.length; i++) {
+            if (!Arrays.equals(Arrays.copyOfRange(bytes, i, i + oldName.length), oldName)) continue;
+            System.arraycopy(newName, 0, bytes, i, newName.length);
+            replaced++;
+        }
+        assertEquals(2, replaced); // Local and central directory names.
+        Files.write(archive, bytes);
+        assertThrows(IOException.class, () -> MspSkinDocument.open(archive).luaHash());
+    }
+
+    private static void writeEntry(ZipOutputStream zip, String name, byte[] data) throws IOException {
+        zip.putNextEntry(new ZipEntry(name));
+        zip.write(data);
+        zip.closeEntry();
+    }
+
+    private static String sha256(byte[] bytes) {
+        try {
+            return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (NoSuchAlgorithmException error) {
+            throw new AssertionError(error);
+        }
+    }
 
     @Test
     void editsPackageWithoutChangingOtherAssets() throws IOException {

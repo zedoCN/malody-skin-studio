@@ -53,3 +53,5 @@ python3 scripts/v_module_state.py /Users/zedo/Projects/Emiria/Library/CodexSkinF
 ```
 
 这次冻结帧导出 2 个工厂中的 97 个模块，逐模块读取没有报错。`trackbg` 原始 `width=2325.40`、`height=1200` Unit，运行后分别为 `2442.98`、`1110` Unit，高度比正好是 **0.925**。这个诊断脚本只比较能直接对应的 Unit 图片尺寸和透明度；出现差异仍需结合游戏代码与 Lua 判断原因，不应将全部差异归于 Lua。Unity Editor 菜单回调里的 `Screen.height` 曾报告 1616，而同次 Game View 截图源高度是 986；导出字段明确标成 `unityReportedScreenHeight`，对照实际视口要以截图的 `sourceWidth`、`sourceHeight` 为准。
+
+V 编辑器的「运行态对照」页可显式加载这份 JSON，按 `info.asm` 原始字节 SHA-256 和 Emiria 的整套 Lua 文件 hash 校验当前保存版皮肤。`.msp` 与解包目录若这两类内容相同，也可通过校验；**素材文件和目录路径不在校验范围内**，运行值仍属于导出时的皮肤副本。指纹不匹配时不展示组件运行值。选中组件后按原始模块参数寻找唯一对应项；同名或相同参数导致歧义时不会猜测。该页始终只读，尚未保存的编辑草稿不参与匹配；修改皮肤并保存后，需要重新运行 Unity 导出新快照。若替换图片等素材，同样需要重新导出快照才能确认运行画面。

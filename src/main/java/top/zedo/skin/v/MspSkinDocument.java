@@ -12,11 +12,18 @@ import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.LinkOption;
 import java.nio.file.attribute.PosixFilePermission;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Enumeration;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Arrays;
 import java.util.Set;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
@@ -26,6 +33,8 @@ public final class MspSkinDocument {
     private static final int MAX_ASM_BYTES = 16 * 1024 * 1024;
     private static final int MAX_PREVIEW_BYTES = 64 * 1024 * 1024;
     static final int MAX_LUA_BYTES = 1024 * 1024;
+    private static final int MAX_LUA_FILES = 4096;
+    private static final long MAX_TOTAL_LUA_BYTES = 64L * 1024 * 1024;
 
     private final Path path;
     private final boolean archive;
@@ -87,6 +96,120 @@ public final class MspSkinDocument {
 
     public Path path() { return path; }
     public SkinFile skin() { return skin; }
+
+    String asmSha256() throws IOException {
+        Path source = archive ? path : path.resolve("info.asm");
+        requireUnchanged(source);
+        byte[] asm;
+        if (archive) {
+            try (ZipFile zip = new ZipFile(path.toFile())) {
+                ZipEntry entry = uniqueEntry(zip, entryPrefix + "info.asm");
+                if (entry == null || entry.isDirectory()) throw new IOException("MSP 中缺少 info.asm");
+                asm = readZipEntry(zip, entry, MAX_ASM_BYTES);
+            }
+        } else {
+            checkInsideSkin(source);
+            asm = readBounded(Files.newInputStream(source), MAX_ASM_BYTES);
+        }
+        requireUnchanged(source);
+        return hex(hash("SHA-256", asm));
+    }
+
+    String luaHash() throws IOException {
+        Path source = archive ? path : path.resolve("info.asm");
+        requireUnchanged(source);
+        List<String> hashes = archive ? archiveLuaHashes() : folderLuaHashes();
+        requireUnchanged(source);
+        if (hashes.isEmpty()) return "None";
+        if (hashes.size() == 1) return hashes.get(0);
+        return hex(hash("MD5", String.join("", hashes).getBytes(StandardCharsets.US_ASCII)));
+    }
+
+    private List<String> folderLuaHashes() throws IOException {
+        List<Path> files;
+        try (Stream<Path> walk = Files.walk(path)) {
+            files = walk.filter(file -> file.getFileName().toString().endsWith(".lua"))
+                    .filter(file -> Files.isRegularFile(file))
+                    .sorted(Comparator.comparing(file -> path.relativize(file).toString()))
+                    .toList();
+        } catch (java.io.UncheckedIOException error) {
+            throw error.getCause();
+        }
+        if (files.size() > MAX_LUA_FILES) throw new IOException("Lua 文件过多");
+        List<String> hashes = new ArrayList<>(files.size());
+        long totalBytes = 0;
+        for (Path file : files) {
+            checkInsideSkin(file);
+            byte[] bytes = readBounded(Files.newInputStream(file), MAX_LUA_BYTES);
+            totalBytes += bytes.length;
+            if (totalBytes > MAX_TOTAL_LUA_BYTES) throw new IOException("Lua 文件总大小过大");
+            hashes.add(hex(hash("MD5", bytes)));
+        }
+        return hashes;
+    }
+
+    private List<String> archiveLuaHashes() throws IOException {
+        List<ZipEntry> files = new ArrayList<>();
+        Set<String> names = new HashSet<>();
+        try (ZipFile zip = new ZipFile(path.toFile())) {
+            Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                String name = entry.getName();
+                if (!name.startsWith(entryPrefix) || !name.endsWith(".lua")) continue;
+                String relative = name.substring(entryPrefix.length());
+                if (!relative.equals(safeResourceName(relative)) || entry.isDirectory()) {
+                    throw new IOException("MSP 中的 Lua 路径无效: " + name);
+                }
+                if (!names.add(relative)) throw new IOException("MSP 中包含重复 Lua 文件: " + name);
+                files.add(entry);
+                if (files.size() > MAX_LUA_FILES) throw new IOException("Lua 文件过多");
+            }
+            files.sort(Comparator.comparing(entry -> entry.getName().substring(entryPrefix.length())));
+            List<String> hashes = new ArrayList<>(files.size());
+            long totalBytes = 0;
+            for (ZipEntry entry : files) {
+                byte[] bytes = readZipEntry(zip, entry, MAX_LUA_BYTES);
+                totalBytes += bytes.length;
+                if (totalBytes > MAX_TOTAL_LUA_BYTES) throw new IOException("Lua 文件总大小过大");
+                hashes.add(hex(hash("MD5", bytes)));
+            }
+            return hashes;
+        }
+    }
+
+    private void checkInsideSkin(Path file) throws IOException {
+        if (!file.toRealPath().startsWith(path) || !Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("皮肤文件路径越界或不是普通文件: " + file);
+        }
+    }
+
+    private static ZipEntry uniqueEntry(ZipFile zip, String name) throws IOException {
+        ZipEntry found = null;
+        Enumeration<? extends ZipEntry> entries = zip.entries();
+        while (entries.hasMoreElements()) {
+            ZipEntry entry = entries.nextElement();
+            if (!entry.getName().equals(name)) continue;
+            if (found != null) throw new IOException("MSP 中包含重复文件: " + name);
+            found = entry;
+        }
+        return found;
+    }
+
+    private static byte[] readZipEntry(ZipFile zip, ZipEntry entry, int limit) throws IOException {
+        if (entry.getSize() > limit) throw new IOException("皮肤文件过大: " + entry.getName());
+        return readBounded(zip.getInputStream(entry), limit);
+    }
+
+    private static byte[] hash(String algorithm, byte[] data) {
+        try {
+            return MessageDigest.getInstance(algorithm).digest(data);
+        } catch (NoSuchAlgorithmException error) {
+            throw new IllegalStateException("JDK 缺少 " + algorithm, error);
+        }
+    }
+
+    private static String hex(byte[] bytes) { return java.util.HexFormat.of().formatHex(bytes); }
 
     public byte[] resource(String filename) throws IOException {
         return resource(filename, MAX_PREVIEW_BYTES);
