@@ -141,9 +141,9 @@ public final class VEditorPane extends BorderPane {
         HBox sceneTools = new HBox(8, new Label("图层"), sceneLayer,
                 new Label("平台"), scenePlatform, refreshScene);
         sceneTools.setAlignment(Pos.CENTER_LEFT);
-        VBox sceneBox = new VBox(10, new Label("同层静态自定义图片布局概览 · 参考视口 1920×1080"), sceneTools,
+        VBox sceneBox = new VBox(10, new Label("原始参数布局概览 · 参考视口 1920×1080 · 不执行 Lua"), sceneTools,
                 new ScrollPane(sceneCanvas), sceneStatus,
-                new Label("可拖动静态图片调整偏移量，点击“保存皮肤”写回。游戏内动态效果不参与。"));
+                new Label("可拖动图片调整偏移量，点击“保存皮肤”写回。Lua 仍可能在游戏中改写这些图片。"));
         sceneBox.setPadding(new Insets(12));
         Tab resourceTab = new Tab("单资源", imageBox);
         Tab sceneTab = new Tab("布局概览", sceneBox);

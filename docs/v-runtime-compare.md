@@ -43,3 +43,13 @@ uv run scripts/v_capture_diff.py full.png hidden-layer1.png --restored restored.
 2026-09-26 用 Emiria `d3b60d0fd`、EX Rhythm Master VI 的隔离副本和 R.I.P. 的 `slide_easy.mc` 实测：Unity 正常进入 ScenePlay，捕获到 **1752×986** 的最终 Game View。目标音频时刻为 10000 ms，实际暂停于 **10001.07 ms**；隐藏图层 1 与图层 4 后，分别有约 65% 与 14% 的最终画面像素变化。两层都恢复显示后，整张 PNG 的 SHA-256 与最初截图相同，说明暂停后的图层对照可重复。本项目同尺寸、`windows` 平台、图层 `1` 的静态 PNG 可用于几何对照。首次用同曲 `4k_easy.mc` 被 `Skin.SupportPlayMode` 拒绝，说明入口确实执行了游戏的模式检查。图层 1 中四个固定图标的边框位置目视相差约 1–2 px；其他区域仍须按模块识别，不能直接把整图差异当作静态布局缺陷。
 
 这次最明显的赛道横杆差异已经定位到 Lua，而非画布坐标：背景层模块 `#16`（`trackbg`，`1712474142416.png`）原始高度为 1200 Unit；样本的 `rmslideEXF.lua` 根据 `Game:FieldMeta("Angle")` 计算 `trackscale = 1 - (angle - 30) / 200`，并在第 360–362 行改写模块宽高。此次游戏配置的角度为 45°，所以高度乘以 **0.925**；横杆从原始参数快照的约 `y=790` 移到 Unity 画面的约 `y=733`。隐藏图层 1 时该横杆随之消失。说明当前预览中的“静态”仅指原始模块参数可投影，**不保证模块在 Lua 运行后仍保持该位置和尺寸**；因此暂不改动 `VSceneLayout` 公式。
+
+## 冻结帧模块状态
+
+达到 `chart-time-frozen` 后执行 Unity 菜单 `Tools/Malody/Codex/Export Module State`，可将背景层和顶层的模块写入 Emiria 的 `Library/CodexSkinFixture.modules.json`。每个条目包含逻辑名称、所属工厂、原始 `info.asm` 参数，以及游戏运行后的模块尺寸、透明度和 RectTransform 状态。导出还记录 `info.asm` 的 SHA-256、皮肤 Lua hash、谱面文件名和实际音频时刻；同名模块列在 `duplicateNames`，因此匹配时不能只依赖名称。输出留在 Emiria 的 `Library`，不提交皮肤内容。
+
+```sh
+python3 scripts/v_module_state.py /Users/zedo/Projects/Emiria/Library/CodexSkinFixture.modules.json --name trackbg
+```
+
+这次冻结帧导出 2 个工厂中的 97 个模块，逐模块读取没有报错。`trackbg` 原始 `width=2325.40`、`height=1200` Unit，运行后分别为 `2442.98`、`1110` Unit，高度比正好是 **0.925**。这个诊断脚本只比较能直接对应的 Unit 图片尺寸和透明度；出现差异仍需结合游戏代码与 Lua 判断原因，不应将全部差异归于 Lua。Unity Editor 菜单回调里的 `Screen.height` 曾报告 1616，而同次 Game View 截图源高度是 986；导出字段明确标成 `unityReportedScreenHeight`，对照实际视口要以截图的 `sourceWidth`、`sourceHeight` 为准。

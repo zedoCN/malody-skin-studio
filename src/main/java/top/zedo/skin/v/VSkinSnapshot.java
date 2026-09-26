@@ -73,7 +73,7 @@ public final class VSkinSnapshot {
             writePng(result.image(), outputPath);
             System.out.println("已保存 V 静态层 PNG: " + outputPath.toAbsolutePath());
             System.out.println(result.status());
-            System.out.println("仅包含可投影的静态自定义图片；Lua、动画、动态条件和赛道层未包含。");
+            System.out.println("仅按原始参数投影图片；Lua 可能在游戏中改写这些图片，动画、动态条件和赛道层未包含。");
         } finally {
             Platform.exit();
         }
