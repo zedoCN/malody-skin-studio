@@ -37,9 +37,14 @@ public final class VEditorFlowSmoke {
                 .setImage(SkinFile.ModuleParamImage.newBuilder().setFile("red.png")
                         .setWu(SkinFile.ModuleParamUnit.Percent).setHu(SkinFile.ModuleParamUnit.Percent)
                         .setWidth(20).setHeight(20)).build();
+        SkinFile.Module second = module.toBuilder()
+                .setParam(module.getParam().toBuilder().setLayer(4))
+                .setImage(module.getImage().toBuilder().setFile("blue.png"))
+                .build();
         Path asm = directory.resolve("info.asm");
         Files.write(asm, SkinFile.newBuilder().setMeta(
-                SkinFile.Meta.newBuilder().setTitle("probe")).addModules(module).build().toByteArray());
+                SkinFile.Meta.newBuilder().setTitle("probe")).addModules(module).addModules(second)
+                .build().toByteArray());
         BufferedImage image = new BufferedImage(2, 2, BufferedImage.TYPE_INT_ARGB);
         for (int y = 0; y < 2; y++) for (int x = 0; x < 2; x++) image.setRGB(x, y, 0xffff0000);
         ImageIO.write(image, "png", directory.resolve("red.png").toFile());
@@ -76,6 +81,18 @@ public final class VEditorFlowSmoke {
                     require(nodes(pane).get(0).getLayoutX() > originalX.get(), "图片未移动");
                     require((int) field(pane, "currentModule") == 0, "更新预览丢失了组件选中状态");
                     require(Arrays.equals(original, Files.readAllBytes(asm)), "预览提前写入文件");
+                    TextField search = (TextField) field(pane, "moduleSearch");
+                    ListView<?> list = (ListView<?>) field(pane, "modules");
+                    search.setText("blue.png");
+                    require(list.getItems().size() == 1, "资源名筛选没有缩小组件列表");
+                    require((int) field(pane, "currentModule") == 0, "筛选切换了当前草稿");
+                    require(((TextField) field(pane, "x")).getText().equals("20"), "筛选丢失了未保存属性");
+                    search.setText("not-found");
+                    require(list.getItems().isEmpty(), "无匹配时列表未清空");
+                    require((int) field(pane, "currentModule") == 0, "无匹配时丢失了组件选中状态");
+                    search.clear();
+                    require(list.getItems().size() == 2 && list.getSelectionModel().getSelectedIndex() == 0,
+                            "清除筛选没有恢复列表和选中项");
                     require(pane.saveNow(), "保存失败");
                     ((TextField) field(pane, "name")).setText("renamed");
                     require(pane.saveNow(), "名称修改保存失败");
@@ -89,7 +106,15 @@ public final class VEditorFlowSmoke {
                     require(Arrays.equals(saved, Files.readAllBytes(asm)), "无效数字覆盖了文件");
                     require(((Label) field(pane, "inspectorStatus")).getText().contains("有效数字"),
                             "无效数字没有就地提示");
-                    System.out.println("V flow PASS: live preview, draft save, inline validation");
+                    ((TextField) field(pane, "x")).setText("20");
+                    search.setText("blue.png");
+                    search.getOnAction().handle(new javafx.event.ActionEvent());
+                    require((int) field(pane, "currentModule") == 1, "回车没有选中筛选结果");
+                    search.setText("red.png");
+                    search.getOnAction().handle(new javafx.event.ActionEvent());
+                    require((int) field(pane, "currentModule") == 0, "筛选结果无法切回原组件");
+                    require(Arrays.equals(saved, Files.readAllBytes(asm)), "筛选与切换提前写入文件");
+                    System.out.println("V flow PASS: live preview, draft save, inline validation, module filter");
                 } catch (Throwable error) {
                     failure.set(error);
                 } finally {

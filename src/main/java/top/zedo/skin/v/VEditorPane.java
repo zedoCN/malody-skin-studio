@@ -20,6 +20,7 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.input.KeyCode;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -34,7 +35,10 @@ import top.zedo.skin.v.proto.SkinVProto.SkinFile;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -45,6 +49,8 @@ public final class VEditorPane extends BorderPane {
     private final Label heading;
     private final Label saveStatus = new Label("已保存");
     private final ListView<String> modules = new ListView<>();
+    private final List<String> moduleLabels = new ArrayList<>();
+    private final List<Integer> visibleModuleIndices = new ArrayList<>();
     private final TextField moduleSearch = new TextField();
     private final Label moduleSearchStatus = new Label();
     private final TextField title = new TextField();
@@ -103,11 +109,22 @@ public final class VEditorPane extends BorderPane {
         setTop(toolbar);
 
         Label moduleHeading = sectionTitle("组件 · " + draft.moduleCount());
-        moduleSearch.setPromptText("名称或资源名，回车定位");
+        moduleSearch.setPromptText("筛选名称或资源名");
         moduleSearch.setOnAction(_ -> locateModule());
+        moduleSearch.setOnKeyPressed(event -> {
+            if (event.getCode() == KeyCode.ESCAPE) moduleSearch.clear();
+        });
+        moduleSearch.setTooltip(new Tooltip("输入即筛选；回车选中第一项，Esc 清除"));
+        moduleSearch.textProperty().addListener((_, _, _) -> refreshModuleList());
+        Button clearSearch = new Button("×");
+        clearSearch.setTooltip(new Tooltip("清除筛选"));
+        clearSearch.disableProperty().bind(moduleSearch.textProperty().isEmpty());
+        clearSearch.setOnAction(_ -> moduleSearch.clear());
+        HBox searchRow = new HBox(6, moduleSearch, clearSearch);
+        HBox.setHgrow(moduleSearch, Priority.ALWAYS);
         moduleSearchStatus.setText("选择组件后在画布上查看位置与属性");
         moduleSearchStatus.setWrapText(true);
-        VBox navigator = new VBox(10, moduleHeading, moduleSearch, moduleSearchStatus, modules);
+        VBox navigator = new VBox(10, moduleHeading, searchRow, moduleSearchStatus, modules);
         navigator.getStyleClass().add("v-sidebar");
         navigator.setPadding(new Insets(12));
         navigator.setPrefWidth(270);
@@ -251,30 +268,26 @@ public final class VEditorPane extends BorderPane {
         creator.setText(draft.metadata().getCreator());
         description.setText(draft.metadata().getDesc());
         cover.setText(draft.metadata().getCover());
-        for (int i = 0; i < draft.moduleCount(); i++) modules.getItems().add(moduleLabel(i));
-        modules.getSelectionModel().selectedIndexProperty().addListener((_, oldIndex, newIndex) -> {
+        for (int i = 0; i < draft.moduleCount(); i++) moduleLabels.add(moduleLabel(i));
+        refreshModuleList();
+        modules.getSelectionModel().selectedIndexProperty().addListener((_, _, newIndex) -> {
             if (changingSelection) return;
+            int row = newIndex.intValue();
+            if (row < 0 || row >= visibleModuleIndices.size()) return;
+            int next = visibleModuleIndices.get(row);
+            if (next == currentModule) return;
             previewDebounce.stop();
-            int next = newIndex.intValue();
-            if (next < 0 && oldIndex.intValue() >= 0) {
-                changingSelection = true;
-                try {
-                    modules.getSelectionModel().select(oldIndex.intValue());
-                } finally {
-                    changingSelection = false;
-                }
-                return;
-            }
+            int previousIndex = currentModule;
             SkinFile.Module previous = currentModule >= 0 ? draft.module(currentModule) : null;
             if (!applyModule()) {
-                changingSelection = true;
-                modules.getSelectionModel().select(oldIndex.intValue());
-                changingSelection = false;
+                selectCurrentInList();
+                moduleSearchStatus.setText("先修正右侧组件属性，再切换组件");
                 return;
             }
             currentModule = next;
+            selectCurrentInList();
             showModule(next);
-            if (previous != null && !previous.equals(draft.module(oldIndex.intValue()))) refreshScene();
+            if (previous != null && !previous.equals(draft.module(previousIndex))) refreshScene();
         });
         refreshScene();
         if (!modules.getItems().isEmpty()) {
@@ -286,8 +299,8 @@ public final class VEditorPane extends BorderPane {
                     })
                     .mapToInt(Map.Entry::getKey).min()
                     .orElseGet(() -> sceneNodes.keySet().stream().mapToInt(Integer::intValue).min().orElse(0));
-            modules.getSelectionModel().select(initialModule);
-            modules.scrollTo(Math.max(0, initialModule - 2));
+            selectModuleInList(initialModule);
+            modules.scrollTo(Math.max(0, visibleModuleIndices.indexOf(initialModule) - 2));
         }
         watchEdits();
         previewDebounce.setOnFinished(_ -> {
@@ -349,25 +362,67 @@ public final class VEditorPane extends BorderPane {
     }
 
     private void locateModule() {
-        String query = moduleSearch.getText().trim().toLowerCase(java.util.Locale.ROOT);
-        if (query.isEmpty()) {
-            moduleSearchStatus.setText("输入名称或资源关键字后按回车");
-            return;
+        if (moduleSearch.getText().isBlank() || visibleModuleIndices.isEmpty()) return;
+        modules.getSelectionModel().selectFirst();
+        modules.scrollTo(0);
+    }
+
+    private void refreshModuleList() {
+        String query = moduleSearch.getText().trim().toLowerCase(Locale.ROOT);
+        List<String> shown = new ArrayList<>();
+        List<Integer> indices = new ArrayList<>();
+        for (int i = 0; i < moduleLabels.size(); i++) {
+            String label = moduleLabels.get(i);
+            String resourceName = VModuleResource.value(draft.module(i));
+            if (!query.isEmpty() && !label.toLowerCase(Locale.ROOT).contains(query)
+                    && !resourceName.toLowerCase(Locale.ROOT).contains(query)) continue;
+            shown.add(label);
+            indices.add(i);
         }
-        for (int i = 0; i < draft.moduleCount(); i++) {
-            String label = moduleLabel(i).toLowerCase(java.util.Locale.ROOT);
-            String resourceName = VModuleResource.value(draft.module(i)).toLowerCase(java.util.Locale.ROOT);
-            if (!label.contains(query) && !resourceName.contains(query)) continue;
-            modules.getSelectionModel().select(i);
-            if (modules.getSelectionModel().getSelectedIndex() != i) {
-                moduleSearchStatus.setText("先修正右侧组件属性，再定位其他组件");
-                return;
-            }
-            modules.scrollTo(i);
-            moduleSearchStatus.setText("已定位组件 #" + (i + 1));
-            return;
+        changingSelection = true;
+        try {
+            visibleModuleIndices.clear();
+            visibleModuleIndices.addAll(indices);
+            modules.getItems().setAll(shown);
+            int selectedRow = visibleModuleIndices.indexOf(currentModule);
+            if (selectedRow >= 0) modules.getSelectionModel().select(selectedRow);
+            else modules.getSelectionModel().clearSelection();
+        } finally {
+            changingSelection = false;
         }
-        moduleSearchStatus.setText("没有找到“" + moduleSearch.getText().trim() + "”");
+        updateNavigatorStatus();
+    }
+
+    private void updateNavigatorStatus() {
+        if (!moduleSearch.getText().isBlank()) {
+            String status = visibleModuleIndices.isEmpty()
+                    ? "没有匹配的组件"
+                    : "显示 " + visibleModuleIndices.size() + " / " + draft.moduleCount() + " 个组件";
+            if (currentModule >= 0 && !visibleModuleIndices.contains(currentModule))
+                status += "；当前编辑的组件已隐藏";
+            moduleSearchStatus.setText(status);
+        } else {
+            moduleSearchStatus.setText(currentModule >= 0
+                    ? "已选中组件 #" + (currentModule + 1) + "；右侧可编辑属性"
+                    : "选择组件后在画布上查看位置与属性");
+        }
+    }
+
+    private void selectCurrentInList() {
+        changingSelection = true;
+        try {
+            int row = visibleModuleIndices.indexOf(currentModule);
+            if (row >= 0) modules.getSelectionModel().select(row);
+            else modules.getSelectionModel().clearSelection();
+        } finally {
+            changingSelection = false;
+        }
+    }
+
+    private void selectModuleInList(int index) {
+        if (!visibleModuleIndices.contains(index)) moduleSearch.clear();
+        int row = visibleModuleIndices.indexOf(index);
+        if (row >= 0) modules.getSelectionModel().select(row);
     }
 
     private String moduleLabel(int index) {
@@ -412,7 +467,7 @@ public final class VEditorPane extends BorderPane {
             return;
         }
         SkinFile.Module module = draft.module(index);
-        moduleSearchStatus.setText("已选中组件 #" + (index + 1) + "；右侧可编辑属性");
+        updateNavigatorStatus();
         SkinFile.ModuleParam param = module.getParam();
         VSkinEditModel.ModuleFields fields = draft.fields(index);
         moduleKind.setText("用途 " + module.getUsage() + " · " + moduleTypeName(module.getType())
@@ -478,7 +533,7 @@ public final class VEditorPane extends BorderPane {
             boolean[] dragging = {false};
             node.setOnMousePressed(event -> {
                 if (!applyModule()) return;
-                modules.getSelectionModel().select(index);
+                selectModuleInList(index);
                 if (!draft.module(index).equals(module)) { refreshScene(); return; }
                 drag[0] = event.getSceneX();
                 drag[1] = event.getSceneY();
@@ -640,18 +695,15 @@ public final class VEditorPane extends BorderPane {
     private boolean applyModule(boolean reportErrors) {
         if (currentModule < 0 || currentModule >= draft.moduleCount()) return true;
         try {
+            String previousResource = VModuleResource.value(draft.module(currentModule));
             draft.updateModule(currentModule, new VSkinEditModel.ModuleFields(name.getText(), resource.getText(),
                     x.getText(), y.getText(), dx.getText(), dy.getText(), width.getText(), height.getText(),
                     alpha.getText(), rotate.getText()));
             String label = moduleLabel(currentModule);
-            if (!label.equals(modules.getItems().get(currentModule))) {
-                changingSelection = true;
-                try {
-                    modules.getItems().set(currentModule, label);
-                    modules.getSelectionModel().select(currentModule);
-                } finally {
-                    changingSelection = false;
-                }
+            if (!label.equals(moduleLabels.get(currentModule))
+                    || !previousResource.equals(VModuleResource.value(draft.module(currentModule)))) {
+                moduleLabels.set(currentModule, label);
+                refreshModuleList();
             }
             inspectorStatus.setText("");
             return true;

@@ -12,6 +12,8 @@ import javafx.scene.control.MenuBar;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
+import javafx.scene.input.DragEvent;
+import javafx.scene.input.TransferMode;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -71,6 +73,36 @@ final class SkinStudioWindow extends BorderPane {
             documents.getTabs().remove(muiTab);
             if (documents.getTabs().isEmpty()) documents.getTabs().add(startTab);
         });
+        addEventFilter(DragEvent.DRAG_OVER, event -> {
+            if (event.getDragboard().hasFiles()
+                    && event.getDragboard().getFiles().stream().anyMatch(SkinStudioWindow::supportsDrop)) {
+                event.acceptTransferModes(TransferMode.COPY);
+                event.consume();
+            }
+        });
+        addEventFilter(DragEvent.DRAG_DROPPED, event -> {
+            if (!event.getDragboard().hasFiles()) return;
+            var files = event.getDragboard().getFiles().stream().filter(SkinStudioWindow::supportsDrop).toList();
+            if (files.isEmpty()) return;
+            event.setDropCompleted(true);
+            event.consume();
+            Platform.runLater(() -> {
+                for (File droppedFile : files) {
+                    open(droppedFile.toPath());
+                    Path parent = droppedFile.toPath().toAbsolutePath().getParent();
+                    if (parent != null) SkinConfig.data.lastOpenDir = parent.toString();
+                }
+            });
+        });
+    }
+
+    private static boolean supportsDrop(File file) {
+        Path path = file.toPath();
+        if (Files.isDirectory(path)) return Files.isRegularFile(path.resolve("info.asm"));
+        if (!Files.isRegularFile(path)) return false;
+        String name = file.getName().toLowerCase(java.util.Locale.ROOT);
+        return name.endsWith(".mui") || name.endsWith(".msz")
+                || name.endsWith(".msp") || name.equals("info.asm");
     }
 
     void open(Path path) {
@@ -111,7 +143,7 @@ final class SkinStudioWindow extends BorderPane {
         Button openDirectory = new Button("打开 V 目录…");
         openDirectory.getStyleClass().add("studio-start-secondary");
         openDirectory.setOnAction(_ -> chooseAndOpenDirectory());
-        Label shortcut = new Label("也可按 ⌘/Ctrl+O");
+        Label shortcut = new Label("也可拖入皮肤文件，或按 ⌘/Ctrl+O");
         shortcut.getStyleClass().add("studio-start-description");
         HBox actions = new HBox(12, open, openDirectory, shortcut);
         actions.setAlignment(Pos.CENTER_LEFT);
@@ -155,11 +187,13 @@ final class SkinStudioWindow extends BorderPane {
         guide.setTitle("Malody Skin Studio · 快速上手");
         guide.setHeaderText("打开皮肤后，左边编辑，右边预览");
         guide.setContentText("4.x UIS（.mui / .msz）\n"
+                + "• 可将皮肤文件直接拖入窗口打开。\n"
                 + "• 修改左侧脚本会自动写回原文件或皮肤包；也可按 ⌘/Ctrl+S 保存。\n"
                 + "• 用“适应预览”看完整画面；缩放滑块放大后可在预览区滚动查看。\n"
                 + "• 顶部切换设备和屏幕比例；底部播放、暂停或重放动画。\n"
                 + "• 预览中部分普通图片可以直接拖动位置。\n\n"
                 + "Malody V（.msp / info.asm / 皮肤目录）\n"
+                + "• 左侧输入名称或资源名即可筛选组件；Esc 清除筛选。\n"
                 + "• 修改组件属性或 Lua 源码后，点击“保存皮肤”写回文件。\n\n"
                 + "建议先复制一份皮肤，再尝试修改。");
         guide.showAndWait();
