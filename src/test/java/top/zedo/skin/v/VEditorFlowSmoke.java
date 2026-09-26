@@ -7,6 +7,7 @@ import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
+import javafx.scene.control.Slider;
 import javafx.scene.control.TextField;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
@@ -46,6 +47,8 @@ public final class VEditorFlowSmoke {
         SkinFile.Module second = module.toBuilder()
                 .setParam(module.getParam().toBuilder().setLayer(4))
                 .setImage(module.getImage().toBuilder().setFile("blue.png"))
+                .addAnimations(SkinFile.ModuleAnimation.newBuilder().setType(1)
+                        .setStartTime(0).setEndTime(1000).setFromVal0(0).setToVal0(1080))
                 .build();
         Path asm = directory.resolve("info.asm");
         Path lua = directory.resolve("skin.lua");
@@ -57,6 +60,7 @@ public final class VEditorFlowSmoke {
         BufferedImage image = new BufferedImage(2, 2, BufferedImage.TYPE_INT_ARGB);
         for (int y = 0; y < 2; y++) for (int x = 0; x < 2; x++) image.setRGB(x, y, 0xffff0000);
         ImageIO.write(image, "png", directory.resolve("red.png").toFile());
+        ImageIO.write(image, "png", directory.resolve("blue.png").toFile());
         byte[] original = Files.readAllBytes(asm);
 
         CountDownLatch ready = new CountDownLatch(1);
@@ -164,9 +168,19 @@ public final class VEditorFlowSmoke {
                     search.setText("blue.png");
                     search.getOnAction().handle(new javafx.event.ActionEvent());
                     require((int) field(pane, "currentModule") == 1, "回车没有选中筛选结果");
+                    Slider timeline = (Slider) field(pane, "timeline");
+                    require(!timeline.isDisabled(), "有 ASM 动画时未启用时间轴");
+                    double animationStart = nodes(pane).get(1).getLayoutX();
+                    timeline.setValue(.5);
+                    require(nodes(pane).get(1).getLayoutX() > animationStart + 100,
+                            "拖动时间轴未更新 ASM 动画预览");
+                    ((Button) field(pane, "timelineReplay")).fire();
+                    require(timeline.getValue() == 0, "重放没有回到动画开始");
+                    ((Button) field(pane, "timelinePause")).fire();
                     search.setText("red.png");
                     search.getOnAction().handle(new javafx.event.ActionEvent());
                     require((int) field(pane, "currentModule") == 0, "筛选结果无法切回原组件");
+                    require(timeline.isDisabled(), "无动画图层应停用时间轴");
                     require(Arrays.equals(saved, Files.readAllBytes(asm)), "筛选与切换提前写入文件");
                     System.out.println("V flow PASS: live preview, undo/redo, draft save, inline validation, module filter");
                 } catch (Throwable error) {

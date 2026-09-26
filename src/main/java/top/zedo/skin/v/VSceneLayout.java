@@ -33,7 +33,7 @@ final class VSceneLayout {
     enum SceneMatch { MATCH, MISMATCH, UNKNOWN }
 
     record Placement(double left, double top, double width, double height,
-                     double pivotX, double pivotY, int rotate, double opacity) { }
+                     double pivotX, double pivotY, double rotate, double opacity) { }
     record Offsets(float dx, float dy) { }
 
     private VSceneLayout() { }
@@ -52,11 +52,15 @@ final class VSceneLayout {
     }
 
     static boolean isStaticImage(SkinFile.Module module) {
+        return isPreviewImageCandidate(module) && module.getAnimationsCount() == 0
+                && module.getParam().getAlpha() > 0;
+    }
+
+    /** Image geometry we can project before applying any supported module animation. */
+    static boolean isPreviewImageCandidate(SkinFile.Module module) {
         if (module.getType() != CUSTOM_IMAGE || module.getUsage() != 99
                 || !module.hasImage() || module.getMeta().getDisabled()
-                || module.getTriggersCount() != 0 || module.getAnimationsCount() != 0
-                || module.getParam().getAnchorNote()
-                || module.getParam().getAlpha() <= 0) return false;
+                || module.getTriggersCount() != 0 || module.getParam().getAnchorNote()) return false;
         SkinFile.ModuleParamImage image = module.getImage();
         SkinFile.ModuleParam param = module.getParam();
         return !image.getFile().isBlank() && image.getRes() == 0 && image.getColor().isBlank()
@@ -114,6 +118,20 @@ final class VSceneLayout {
                              double canvasWidth, double canvasHeight, double imageWidth, double imageHeight) {
         if (!supports(module, context) || canvasWidth <= 0 || canvasHeight <= 0
                 || imageWidth <= 0 || imageHeight <= 0) throw new IllegalArgumentException("不支持该静态图片布局");
+        return projectGeometry(module, canvasWidth, canvasHeight, imageWidth, imageHeight);
+    }
+
+    static Placement projectPreview(SkinFile.Module module, SceneContext context,
+                                    double canvasWidth, double canvasHeight, double imageWidth, double imageHeight) {
+        if (!isFullScreenLayer(module.getParam().getLayer()) || !isPreviewImageCandidate(module)
+                || sceneMatch(module, context) != SceneMatch.MATCH || canvasWidth <= 0 || canvasHeight <= 0
+                || imageWidth <= 0 || imageHeight <= 0)
+            throw new IllegalArgumentException("不支持该图片动画布局");
+        return projectGeometry(module, canvasWidth, canvasHeight, imageWidth, imageHeight);
+    }
+
+    private static Placement projectGeometry(SkinFile.Module module, double canvasWidth, double canvasHeight,
+                                             double imageWidth, double imageHeight) {
         SkinFile.ModuleParam param = module.getParam();
         SkinFile.ModuleParamImage image = module.getImage();
         double unit = canvasHeight / 1080d;

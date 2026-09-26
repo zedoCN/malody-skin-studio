@@ -1,5 +1,6 @@
 package top.zedo.skin.v;
 
+import javafx.animation.AnimationTimer;
 import javafx.animation.PauseTransition;
 import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
@@ -13,6 +14,7 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Slider;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
@@ -85,12 +87,32 @@ public final class VEditorPane extends BorderPane {
     private final ImageView preview = new ImageView();
     private final Pane sceneCanvas = new Pane();
     private final Map<Integer, ImageView> sceneNodes = new HashMap<>();
+    private final Map<Integer, VScenePlan.Item> sceneItems = new HashMap<>();
     private final Rectangle selectedOutline = new Rectangle();
     private final ComboBox<Integer> sceneLayer = new ComboBox<>();
     private final ComboBox<VSceneLayout.Platform> scenePlatform = new ComboBox<>();
     private final Label sceneStatus = new Label();
     private final Label selectedSceneStatus = new Label();
+    private final Slider timeline = new Slider(0, 10, 0);
+    private final Button timelinePlay = new Button("播放");
+    private final Button timelinePause = new Button("暂停");
+    private final Button timelineReplay = new Button("重放");
+    private final Label timelineTime = new Label("0.00 s");
+    private final Label timelineNote = new Label();
+    private final AnimationTimer timelineTimer = new AnimationTimer() {
+        @Override public void handle(long now) {
+            double next = playOriginSeconds + (now - playOriginNanos) / 1_000_000_000d;
+            if (next >= timeline.getMax()) {
+                pauseTimeline();
+                timeline.setValue(timeline.getMax());
+            } else timeline.setValue(next);
+        }
+    };
     private final VRuntimeComparePane runtimeCompare;
+    private long playOriginNanos;
+    private double playOriginSeconds;
+    private boolean timelinePlaying;
+    private boolean adjustingTimeline;
     private int currentModule = -1;
     private boolean changingSelection;
     private boolean updatingFields;
@@ -223,6 +245,29 @@ public final class VEditorPane extends BorderPane {
         HBox sceneTools = new HBox(8, new Label("图层"), sceneLayer,
                 new Label("平台"), scenePlatform);
         sceneTools.setAlignment(Pos.CENTER_LEFT);
+        timeline.setBlockIncrement(0.05);
+        timeline.setMajorTickUnit(1);
+        timeline.setShowTickMarks(true);
+        timeline.setTooltip(new Tooltip("拖动查看 ASM 内置动画的指定时间"));
+        timeline.setOnMousePressed(_ -> pauseTimeline());
+        timeline.valueProperty().addListener((_, _, value) -> {
+            timelineTime.setText(String.format(Locale.ROOT, "%.2f s", value.doubleValue()));
+            if (!adjustingTimeline) updateTimedScene();
+        });
+        timelinePlay.setOnAction(_ -> playTimeline());
+        timelinePause.setOnAction(_ -> pauseTimeline());
+        timelineReplay.setOnAction(_ -> {
+            timeline.setValue(0);
+            playTimeline();
+        });
+        HBox timelineTools = new HBox(8, timelineReplay, timelinePlay, timelinePause, timeline,
+                timelineTime);
+        timelineTools.getStyleClass().add("v-timeline-tools");
+        timelineTools.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(timeline, Priority.ALWAYS);
+        timelineTime.setMinWidth(58);
+        timelineNote.setWrapText(true);
+        timelineNote.getStyleClass().add("v-timeline-note");
         selectedSceneStatus.setWrapText(true);
         selectedSceneStatus.setMaxWidth(Double.MAX_VALUE);
         selectedSceneStatus.getStyleClass().add("v-selected-status");
@@ -237,7 +282,7 @@ public final class VEditorPane extends BorderPane {
                 sceneSurface.setMinSize(bounds.getWidth(), bounds.getHeight()));
         VBox sceneBox = new VBox(10, sectionTitle("布局概览"),
                 new Label("原始参数 · 参考视口 1920×1080 · 不执行 Lua"), sceneTools,
-                sceneViewport, selectedSceneStatus, sceneStatus);
+                timelineTools, timelineNote, sceneViewport, selectedSceneStatus, sceneStatus);
         sceneBox.getStyleClass().add("v-scene-panel");
         sceneBox.setPadding(new Insets(12));
         VBox.setVgrow(sceneViewport, Priority.ALWAYS);
@@ -267,6 +312,12 @@ public final class VEditorPane extends BorderPane {
         TabPane previews = new TabPane(sceneTab, resourceTab, luaTab, runtimeTab, metadataTab);
         previews.getStyleClass().add("v-preview-tabs");
         previews.getSelectionModel().select(sceneTab);
+        previews.getSelectionModel().selectedItemProperty().addListener((_, _, selected) -> {
+            if (selected != sceneTab) pauseTimeline();
+        });
+        sceneProperty().addListener((_, _, scene) -> {
+            if (scene == null) pauseTimeline();
+        });
         previewChanges.setOnAction(_ -> {
             previewDebounce.stop();
             if (applyModule()) {
@@ -653,13 +704,16 @@ public final class VEditorPane extends BorderPane {
     private void refreshScene() {
         sceneCanvas.getChildren().clear();
         sceneNodes.clear();
+        sceneItems.clear();
         Integer layer = sceneLayer.getValue();
         if (layer == null) {
+            configureTimeline(0);
             sceneStatus.setText("此皮肤没有可显示的图层");
             updateSelectedSceneStatus();
             return;
         }
         if (!VSceneLayout.isFullScreenLayer(layer)) {
+            configureTimeline(0);
             sceneStatus.setText(layer == 2 || layer == 3
                     ? "游玩区层使用独立的赛道容器和变换；当前参考画布无法准确投影。"
                     : "该层没有已核实的全屏容器；暂不投影。");
@@ -669,12 +723,17 @@ public final class VEditorPane extends BorderPane {
         VSceneLayout.Platform platform = scenePlatform.getValue();
         VSceneLayout.SceneContext context = VSceneLayout.REFERENCE.withPlatform(
                 platform == null ? VSceneLayout.Platform.WINDOWS : platform);
-        VScenePlan plan = VScenePlan.build(document, draft.skin(), layer, context, 640, 360);
+        VScenePlan plan = VScenePlan.buildPreview(document, draft.skin(), layer, context,
+                640, 360, timeline.getValue() * 1000);
+        double duration = plan.items().stream().filter(VScenePlan.Item::animated)
+                .mapToDouble(item -> VAnimationPreview.durationMillis(item.module()))
+                .max().orElse(0);
+        configureTimeline(duration);
         for (VScenePlan.Item item : plan.items()) {
             int index = item.index();
             SkinFile.Module module = item.module();
             ImageView node = VScenePlan.imageView(item);
-            node.setCursor(Cursor.MOVE);
+            node.setCursor(item.animated() ? Cursor.HAND : Cursor.MOVE);
             node.setPickOnBounds(true);
             double[] drag = new double[4];
             boolean[] dragging = {false};
@@ -682,6 +741,7 @@ public final class VEditorPane extends BorderPane {
                 if (!applyModule()) return;
                 selectModuleInList(index);
                 if (!draft.module(index).equals(module)) { refreshScene(); return; }
+                if (item.animated()) { event.consume(); return; }
                 drag[0] = event.getSceneX();
                 drag[1] = event.getSceneY();
                 drag[2] = node.getLayoutX();
@@ -724,10 +784,61 @@ public final class VEditorPane extends BorderPane {
             });
             sceneCanvas.getChildren().add(node);
             sceneNodes.put(index, node);
+            sceneItems.put(index, item);
         }
+        updateTimedScene();
         sceneStatus.setText(plan.status());
         highlightSceneSelection();
         updateSelectedSceneStatus();
+    }
+
+    private void configureTimeline(double durationMillis) {
+        boolean available = durationMillis > 0;
+        if (!available) pauseTimeline();
+        adjustingTimeline = true;
+        timeline.setMax(available ? Math.max(1, Math.ceil(durationMillis / 100d) / 10d) : 1);
+        timeline.setValue(available ? Math.min(timeline.getValue(), timeline.getMax()) : 0);
+        adjustingTimeline = false;
+        timeline.setDisable(!available);
+        timelineReplay.setDisable(!available);
+        timelinePlay.setDisable(!available || timelinePlaying);
+        timelinePause.setDisable(!available || !timelinePlaying);
+        timelineNote.setText(available
+                ? "时间轴播放 ASM 内置动画；Lua、谱面事件和触发器需在游戏中核对。"
+                : "当前图层没有可独立预览的 ASM 动画；Lua 和游戏事件需在运行态核对。");
+        if (available && timelinePlaying) {
+            playOriginSeconds = timeline.getValue();
+            playOriginNanos = System.nanoTime();
+        }
+    }
+
+    private void playTimeline() {
+        if (timeline.isDisabled()) return;
+        if (timeline.getValue() >= timeline.getMax()) timeline.setValue(0);
+        playOriginSeconds = timeline.getValue();
+        playOriginNanos = System.nanoTime();
+        timelinePlaying = true;
+        timelinePlay.setDisable(true);
+        timelinePause.setDisable(false);
+        timelineTimer.start();
+    }
+
+    private void pauseTimeline() {
+        timelineTimer.stop();
+        timelinePlaying = false;
+        timelinePlay.setDisable(timeline.isDisabled());
+        timelinePause.setDisable(true);
+    }
+
+    private void updateTimedScene() {
+        double timeMillis = timeline.getValue() * 1000;
+        for (VScenePlan.Item item : sceneItems.values()) {
+            if (!item.animated()) continue;
+            ImageView node = sceneNodes.get(item.index());
+            if (node != null) VScenePlan.applyFrame(node, VAnimationPreview.frame(
+                    item.module(), item.basePlacement(), 640, 360, timeMillis));
+        }
+        highlightSceneSelection();
     }
 
     private void updateSelectedSceneStatus() {
@@ -746,14 +857,16 @@ public final class VEditorPane extends BorderPane {
             reason = bounds.getMaxX() <= 0 || bounds.getMinX() >= 640
                     || bounds.getMaxY() <= 0 || bounds.getMinY() >= 360
                     ? "已投影，但位于参考画布外；可检查位置与偏移量。"
-                    : "已在参考画布中描边；可拖动图片或修改右侧属性。";
+                    : sceneItems.get(currentModule).animated()
+                        ? "已在参考画布中描边；拖动时间轴查看 ASM 动画，位置可在右侧修改。"
+                        : "已在参考画布中描边；可拖动图片或修改右侧属性。";
         } else if (module.getType() != VSceneLayout.CUSTOM_IMAGE || module.getUsage() != 99
                 || !module.hasImage()) {
             reason = "当前只投影静态自定义图片；此组件可在右侧编辑，如有独立资源可在“单资源”页查看。";
         } else if (module.getMeta().getDisabled()) {
             reason = "组件已停用，静态画布不显示。";
         } else if (module.getTriggersCount() > 0 || module.getAnimationsCount() > 0) {
-            reason = "组件带触发器或动画，静态画布不执行这些行为。";
+            reason = "组件带触发器或暂不支持的动画，参考画布无法可靠预览。";
         } else if (module.getParam().getAnchorNote()) {
             reason = "组件使用音符锚点，参考画布无法投影。";
         } else if (module.getParam().getAlpha() <= 0) {

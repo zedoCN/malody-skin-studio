@@ -58,6 +58,30 @@ class VScenePlanTest {
         assertEquals(0, png.getRGB(150, 50), "未覆盖区域应透明");
     }
 
+    @Test void previewProjectsBuiltInAnimationWithoutChangingStaticSnapshot() throws Exception {
+        Path skinDirectory = Files.createDirectory(directory.resolve("animated"));
+        SkinFile.Module animated = image("red.png", 0).toBuilder()
+                .addAnimations(SkinFile.ModuleAnimation.newBuilder().setType(1)
+                        .setStartTime(0).setEndTime(1000).setFromVal0(0).setToVal0(1080))
+                .build();
+        SkinFile skin = SkinFile.newBuilder().setMeta(SkinFile.Meta.newBuilder().setTitle("animated"))
+                .addModules(animated).build();
+        Files.write(skinDirectory.resolve("info.asm"), skin.toByteArray());
+        writeColor(skinDirectory, "red.png", 0xffff0000);
+        MspSkinDocument document = MspSkinDocument.open(skinDirectory);
+        VSceneLayout.SceneContext context = new VSceneLayout.SceneContext(
+                200, 100, VSceneLayout.Platform.WINDOWS);
+
+        VScenePlan staticPlan = VScenePlan.build(document, skin, 1, context, 200, 100);
+        VScenePlan preview = VScenePlan.buildPreview(document, skin, 1, context, 200, 100, 500);
+
+        assertTrue(staticPlan.items().isEmpty());
+        assertEquals(1, preview.items().size());
+        assertEquals(50, preview.items().getFirst().placement().left(), 1e-6);
+        assertTrue(preview.items().getFirst().animated());
+        assertTrue(preview.status().contains("1 个 ASM 动画"));
+    }
+
     private static SkinFile.Module image(String file, int order) {
         return SkinFile.Module.newBuilder().setType(VSceneLayout.CUSTOM_IMAGE).setUsage(99)
                 .setParam(SkinFile.ModuleParam.newBuilder().setLayer(1).setOrder(order).setAlpha(100)
