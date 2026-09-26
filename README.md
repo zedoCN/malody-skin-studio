@@ -73,7 +73,7 @@ Windows 使用 `mvnw.cmd`。首次运行会下载 Maven 和 JavaFX 依赖。应�
 - `src/main/resources`：应用样式和图标
 - `src/test/java`：解析边界与关键计算测试
 - `examples/uis`：4.3.7 UIS 脚本、素材和 `.msz` 示例
-- `examples/asm`：Malody V 的 `.msp` 示例，可直接拖入编辑器或通过「打开皮肤」选择
+- `examples/asm`：Malody V 的 `.msp` 示例及同名解包目录；两者都可拖入编辑器，解包目录中可直接查看 `info.asm`、Lua 和素材
 
 本仓库从 [ZXNoter 的 `UISEditor` 分支](https://github.com/ZX-Organization/ZXNoter/tree/UISEditor) 提取。原分支的 `UISEditor`、早期 `ZXNoterUIFrame` 和 `docs/UISEditorTest` 的相关提交历史已保留；提取基点是原仓库提交 `fc5441a4ed710d2cda43af43c1c605b73dc7c9e7`。原分支中未参与应用构建的旧窗口原型、旧渲染器和未完成的格式转换实验没有保留在当前文件树中，可从历史提交查阅。
 
