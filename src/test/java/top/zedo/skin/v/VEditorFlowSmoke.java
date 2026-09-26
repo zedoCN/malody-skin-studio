@@ -8,7 +8,6 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
-import javafx.scene.control.TextArea;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -54,7 +53,7 @@ public final class VEditorFlowSmoke {
                 SkinFile.Meta.newBuilder().setTitle("probe").setScript("skin.lua"))
                 .addModules(module).addModules(second)
                 .build().toByteArray());
-        Files.writeString(lua, "return 1\n");
+        Files.writeString(lua, "return 1\r\n");
         BufferedImage image = new BufferedImage(2, 2, BufferedImage.TYPE_INT_ARGB);
         for (int y = 0; y < 2; y++) for (int x = 0; x < 2; x++) image.setRGB(x, y, 0xffff0000);
         ImageIO.write(image, "png", directory.resolve("red.png").toFile());
@@ -69,6 +68,8 @@ public final class VEditorFlowSmoke {
         Platform.startup(() -> {
             try {
                 VEditorPane pane = new VEditorPane(directory);
+                require(((VLuaCodeArea) field(pane, "luaSource")).getText().equals("return 1\n"),
+                        "Lua 编辑器未正确显示 CRLF 脚本");
                 paneRef.set(pane);
                 new Stage().setScene(new Scene(pane, 1440, 900));
                 originalX.set(nodes(pane).get(0).getLayoutX());
@@ -111,19 +112,22 @@ public final class VEditorFlowSmoke {
                     require(list.getItems().size() == 2 && list.getSelectionModel().getSelectedIndex() == 0,
                             "清除筛选没有恢复列表和选中项");
                     require(pane.saveNow(), "保存失败");
+                    require(Files.readString(lua).equals("return 1\r\n"), "仅保存 ASM 时改写了 Lua 换行");
                     ((TextField) field(pane, "name")).setText("renamed");
                     require(pane.saveNow(), "名称修改保存失败");
                     require((int) field(pane, "currentModule") == 0, "名称更新丢失了组件选中状态");
                     require(((ListView<?>) field(pane, "modules")).getItems().getFirst().toString().contains("renamed"),
                             "列表未显示新名称");
-                    TextArea luaEditor = (TextArea) field(pane, "luaSource");
-                    luaEditor.setText("return 2\n");
+                    VLuaCodeArea luaEditor = (VLuaCodeArea) field(pane, "luaSource");
+                    luaEditor.setSourceText("return 2\n");
+                    require(luaEditor.getStyleOfChar(0).contains("lua-keyword"), "Lua 关键字未高亮");
+                    require(luaEditor.getStyleOfChar(7).contains("lua-number"), "Lua 数字未高亮");
                     pane.undoEdit();
                     require(luaEditor.getText().equals("return 1\n"), "撤销未恢复 Lua");
                     pane.redoEdit();
                     require(luaEditor.getText().equals("return 2\n"), "重做未恢复 Lua");
                     require(pane.saveNow(), "Lua 保存失败");
-                    require(Files.readString(lua).equals("return 2\n"), "Lua 保存内容不正确");
+                    require(Files.readString(lua).equals("return 2\r\n"), "Lua 保存内容或 CRLF 换行不正确");
                     pane.undoEdit();
                     require(luaEditor.getText().equals("return 1\n"), "保存后不能撤销 Lua");
                     pane.redoEdit();

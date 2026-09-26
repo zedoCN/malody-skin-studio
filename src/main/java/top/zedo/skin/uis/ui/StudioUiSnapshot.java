@@ -2,6 +2,8 @@ package top.zedo.skin.uis.ui;
 
 import javafx.application.Platform;
 import javafx.scene.Scene;
+import javafx.scene.control.Tab;
+import javafx.scene.control.TabPane;
 import javafx.scene.image.WritableImage;
 import javafx.stage.Stage;
 
@@ -19,8 +21,9 @@ final class StudioUiSnapshot {
     private StudioUiSnapshot() {}
 
     static void run(String[] args) {
-        if (args.length != 3) throw new IllegalArgumentException(
-                "用法: --snapshot-ui <皮肤.mui|.msp|V目录|--start> <输出.png>");
+        if (args.length != 3 && (args.length != 4 || !args[3].equals("--tab=lua")))
+            throw new IllegalArgumentException(
+                    "用法: --snapshot-ui <皮肤.mui|.msp|V目录|--start> <输出.png> [--tab=lua]");
         boolean startPage = args[1].equals("--start");
         Path skin = startPage ? null : pathArgument(args[1]);
         Path output = pathArgument(args[2]);
@@ -44,6 +47,14 @@ final class StudioUiSnapshot {
                 if (!startPage) workspace.open(skin);
                 workspace.applyCss();
                 workspace.layout();
+                if (args.length == 4) {
+                    TabPane tabs = (TabPane) workspace.lookup(".v-preview-tabs");
+                    if (tabs == null) throw new IllegalArgumentException("当前工作区没有 V 预览页签");
+                    Tab selected = tabs.getTabs().stream().filter(tab -> tab.getText().equals("Lua 源码"))
+                            .findFirst().orElseThrow(() -> new IllegalArgumentException("找不到 Lua 源码页签"));
+                    tabs.getSelectionModel().select(selected);
+                    workspace.layout();
+                }
                 muiEditor.fitPreviewToViewport();
                 workspace.layout();
                 if (muiEditor.uisCanvas.getNaturalWidth() > 0) muiEditor.uisCanvas.draw();

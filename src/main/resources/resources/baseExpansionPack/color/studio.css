@@ -125,6 +125,35 @@
     -fx-background-color: -studio-bg;
 }
 
+.v-editor .v-lua-scroll {
+    -fx-background-color: -studio-field;
+    -fx-border-color: -studio-border;
+    -fx-border-radius: 5;
+}
+
+.v-editor .v-lua-code {
+    -fx-background-color: -studio-field;
+    -fx-font-family: Menlo;
+    -fx-font-size: 14px;
+}
+
+.v-editor .v-lua-code .text { -fx-fill: -studio-text; }
+.v-editor .v-lua-code .lua-keyword { -fx-fill: #caa7f2; }
+.v-editor .v-lua-code .lua-literal { -fx-fill: #f0b77c; }
+.v-editor .v-lua-code .lua-number { -fx-fill: #e6c989; }
+.v-editor .v-lua-code .lua-string { -fx-fill: #b6d78f; }
+.v-editor .v-lua-code .lua-comment { -fx-fill: #8296a0; }
+.v-editor .v-lua-code .lua-function { -fx-fill: #83d8d1; }
+.v-editor .v-lua-code .lua-operator { -fx-fill: #d7b5e6; }
+.v-editor .v-lua-code .lua-punctuation { -fx-fill: #b5c5ce; }
+.v-editor .v-lua-code .caret { -fx-stroke: -studio-text; }
+.v-editor .v-lua-code .selection { -fx-fill: -studio-selection; }
+.v-editor .v-lua-code .lineno {
+    -fx-background-color: -studio-surface;
+    -fx-text-fill: -studio-muted;
+    -fx-padding: 0 12 0 8;
+}
+
 .v-editor .v-scene-viewport,
 .v-editor .v-scene-viewport > .viewport {
     -fx-background-color: -studio-bg;

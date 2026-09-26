@@ -20,6 +20,17 @@ class VLuaSourceTest {
     @TempDir Path directory;
 
     @Test
+    void preservesOriginalLineEndingsWhenRichTextEditorNormalizesThem() {
+        byte[] original = "local x = 1\r\nreturn x\r\n".getBytes(StandardCharsets.UTF_8);
+        VLuaSource.Result loaded = new VLuaSource.Result("script.lua",
+                "local x = 1\r\nreturn x\r\n", "", original, false);
+        assertEquals("local x = 1\nreturn x\n", VLuaSource.editorText(loaded));
+        assertArrayEquals(original, VLuaSource.editedBytes(loaded, VLuaSource.editorText(loaded)));
+        assertEquals("local x = 2\r\nreturn x\r\n",
+                new String(VLuaSource.editedBytes(loaded, "local x = 2\nreturn x\n"), StandardCharsets.UTF_8));
+    }
+
+    @Test
     void reportsScriptContentAndReadFailuresWithoutChangingPackage() throws IOException {
         byte[] script = "\ufefferror('must not run')".getBytes(StandardCharsets.UTF_8);
         Path valid = packageWithScript("valid", "script.lua", script);

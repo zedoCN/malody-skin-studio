@@ -33,6 +33,7 @@ import javafx.scene.layout.Pane;
 import javafx.scene.shape.Rectangle;
 import javafx.util.StringConverter;
 import javafx.util.Duration;
+import org.fxmisc.flowless.VirtualizedScrollPane;
 import top.zedo.skin.v.proto.SkinVProto.SkinFile;
 
 import java.io.ByteArrayInputStream;
@@ -62,9 +63,10 @@ public final class VEditorPane extends BorderPane {
     private final TextField title = new TextField();
     private final TextField creator = new TextField();
     private final TextArea description = new TextArea();
-    private final TextArea luaSource = new TextArea();
+    private final VLuaCodeArea luaSource = new VLuaCodeArea();
     private final Label luaStatus = new Label();
     private VLuaSource.Result luaBaseline;
+    private String luaBaselineText;
     private final TextField cover = new TextField();
     private final TextField name = new TextField();
     private final TextField resource = new TextField();
@@ -242,17 +244,18 @@ public final class VEditorPane extends BorderPane {
         Tab resourceTab = new Tab("单资源", imageBox);
         Tab sceneTab = new Tab("布局概览", sceneBox);
         luaBaseline = VLuaSource.load(document);
+        luaBaselineText = VLuaSource.editorText(luaBaseline);
         Label luaPath = new Label("info.asm 脚本路径：" + (luaBaseline.path().isBlank() ? "(未设置)" : luaBaseline.path()));
         luaPath.setWrapText(true);
-        luaSource.setText(luaBaseline.source());
+        luaSource.setSourceText(luaBaselineText);
         luaSource.setEditable(luaBaseline.originalBytes() != null);
-        luaSource.setWrapText(false);
-        luaSource.setStyle("-fx-font-family: monospace;");
         luaStatus.setText(luaBaseline.diagnostic());
-        VBox luaBox = new VBox(8, sectionTitle("Lua 源码"), luaPath, luaStatus, luaSource);
+        VirtualizedScrollPane<VLuaCodeArea> luaScroll = new VirtualizedScrollPane<>(luaSource);
+        luaScroll.getStyleClass().add("v-lua-scroll");
+        VBox luaBox = new VBox(8, sectionTitle("Lua 源码"), luaPath, luaStatus, luaScroll);
         luaBox.getStyleClass().add("v-lua-panel");
         luaBox.setPadding(new Insets(12));
-        VBox.setVgrow(luaSource, Priority.ALWAYS);
+        VBox.setVgrow(luaScroll, Priority.ALWAYS);
         Tab luaTab = new Tab("Lua 源码", luaBox);
         Tab runtimeTab = new Tab("运行态对照", runtimeCompare);
         Tab metadataTab = new Tab("皮肤信息", metadata);
@@ -388,7 +391,7 @@ public final class VEditorPane extends BorderPane {
             return true;
         }
         current.updateMetadata(title.getText(), creator.getText(), description.getText(), cover.getText());
-        return !current.skin().equals(document.skin()) || !luaSource.getText().equals(luaBaseline.source());
+        return !current.skin().equals(document.skin()) || !luaSource.getText().equals(luaBaselineText);
     }
 
     private void markSaved() {
@@ -449,7 +452,7 @@ public final class VEditorPane extends BorderPane {
             creator.setText(state.creator());
             description.setText(state.description());
             cover.setText(state.cover());
-            luaSource.setText(state.lua());
+            luaSource.setSourceText(state.lua());
             currentModule = state.module();
             moduleLabels.clear();
             for (int i = 0; i < draft.moduleCount(); i++) moduleLabels.add(moduleLabel(i));
@@ -497,7 +500,7 @@ public final class VEditorPane extends BorderPane {
 
     private boolean isSkinInput(TextInputControl control) {
         return control == title || control == creator || control == description || control == cover
-                || control == luaSource || control == name || control == resource || control == x
+                || control == name || control == resource || control == x
                 || control == y || control == dx || control == dy || control == width
                 || control == height || control == alpha || control == rotate;
     }
@@ -888,7 +891,7 @@ public final class VEditorPane extends BorderPane {
         }
         draft.updateMetadata(title.getText(), creator.getText(), description.getText(), cover.getText());
         history.replaceCurrent(captureState());
-        if (draft.skin().equals(document.skin()) && luaSource.getText().equals(luaBaseline.source())) return true;
+        if (draft.skin().equals(document.skin()) && luaSource.getText().equals(luaBaselineText)) return true;
         ButtonType saveChoice = new ButtonType("保存");
         ButtonType discardChoice = new ButtonType("不保存");
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, "V 皮肤有未保存的修改。",
@@ -908,7 +911,7 @@ public final class VEditorPane extends BorderPane {
         draft.updateMetadata(title.getText(), creator.getText(), description.getText(), cover.getText());
         history.replaceCurrent(captureState());
         try {
-            if (luaSource.getText().equals(luaBaseline.source())) {
+            if (luaSource.getText().equals(luaBaselineText)) {
                 document.save(draft.skin());
             } else {
                 if (luaBaseline.originalBytes() == null) throw new IOException("Lua 文件不可编辑，请重新打开皮肤");
@@ -916,9 +919,10 @@ public final class VEditorPane extends BorderPane {
                         VLuaSource.editedBytes(luaBaseline, luaSource.getText()));
             }
             luaBaseline = VLuaSource.load(document);
+            luaBaselineText = VLuaSource.editorText(luaBaseline);
             updatingFields = true;
             try {
-                luaSource.setText(luaBaseline.source());
+                luaSource.setSourceText(luaBaselineText);
             } finally {
                 updatingFields = false;
             }

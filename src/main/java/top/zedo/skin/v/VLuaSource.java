@@ -6,7 +6,7 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 
-/** Read-only view of the Lua file referenced by a V skin's metadata. */
+/** Loads the Lua file referenced by a V skin's metadata for editing. */
 final class VLuaSource {
 
     record Result(String path, String source, String diagnostic, byte[] originalBytes, boolean bom) {
@@ -44,9 +44,15 @@ final class VLuaSource {
         }
     }
 
+    static String editorText(Result loaded) {
+        return normalizeLineEndings(loaded.source());
+    }
+
     static byte[] editedBytes(Result loaded, String source) {
-        if (source.equals(loaded.source())) return loaded.originalBytes();
-        byte[] content = source.getBytes(StandardCharsets.UTF_8);
+        source = normalizeLineEndings(source);
+        if (source.equals(editorText(loaded))) return loaded.originalBytes();
+        String ending = uniformLineEnding(loaded.source());
+        byte[] content = source.replace("\n", ending).getBytes(StandardCharsets.UTF_8);
         if (!loaded.bom()) return content;
         byte[] withBom = new byte[content.length + 3];
         withBom[0] = (byte) 0xef;
@@ -54,6 +60,24 @@ final class VLuaSource {
         withBom[2] = (byte) 0xbf;
         System.arraycopy(content, 0, withBom, 3, content.length);
         return withBom;
+    }
+
+    private static String normalizeLineEndings(String source) {
+        return source.replace("\r\n", "\n").replace('\r', '\n');
+    }
+
+    private static String uniformLineEnding(String source) {
+        boolean crlf = false, cr = false, lf = false;
+        for (int i = 0; i < source.length(); i++) {
+            char ch = source.charAt(i);
+            if (ch == '\r') {
+                if (i + 1 < source.length() && source.charAt(i + 1) == '\n') { crlf = true; i++; }
+                else cr = true;
+            } else if (ch == '\n') lf = true;
+        }
+        if (crlf && !cr && !lf) return "\r\n";
+        if (cr && !crlf && !lf) return "\r";
+        return "\n";
     }
 
     private VLuaSource() { }
