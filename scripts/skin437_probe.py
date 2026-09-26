@@ -57,6 +57,62 @@ def color_panel(args):
     print(f"九宫格色块: {args.output.resolve()}\nSHA-256: {sha256(args.output)}")
 
 
+def scale9_fixture(args):
+    lines = [
+        "_codex-scale9",
+        "    type=5",
+        f"    tex={args.asset_name}",
+        f"    rect={args.rect}",
+        f"    size={args.size}",
+        f"    pos={args.pos}",
+        "    anchor=4",
+        "    zindex=500",
+    ]
+    if args.size2 is not None:
+        lines.append(f"    size2={args.size2}")
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text("\n".join(lines) + "\n")
+    print(f"九宫格节点: {args.output.resolve()}")
+
+
+def measure_panel(args):
+    if shutil.which("ffmpeg") is None:
+        raise RuntimeError("measure-panel 需要 ffmpeg")
+    png = args.image.read_bytes()
+    if png[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError(f"不是 PNG 文件: {args.image}")
+    width, height = struct.unpack(">II", png[16:24])
+    x0, y0, area_width, area_height = map(int, args.roi.split(","))
+    if x0 < 0 or y0 < 0 or area_width <= 0 or area_height <= 0 or x0 + area_width > width or y0 + area_height > height:
+        raise ValueError("ROI 必须位于截图范围内，格式为 x,y,width,height")
+    raw = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(args.image), "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"],
+        capture_output=True, check=True,
+    ).stdout
+    if len(raw) != width * height * 3:
+        raise ValueError(f"PNG 像素长度不匹配: {args.image}")
+    colors = {
+        "red": (255, 0, 0), "green": (0, 255, 0), "blue": (0, 0, 255),
+        "yellow": (255, 255, 0), "magenta": (255, 0, 255), "cyan": (0, 255, 255),
+    }
+    boxes = {}
+    for name, expected in colors.items():
+        xs, ys = [], []
+        for y in range(y0, y0 + area_height):
+            for x in range(x0, x0 + area_width):
+                offset = (y * width + x) * 3
+                if all(abs(raw[offset + channel] - expected[channel]) < 8 for channel in range(3)):
+                    xs.append(x)
+                    ys.append(y)
+        boxes[name] = [min(xs), min(ys), max(xs), max(ys)] if xs else None
+    report = {"image": str(args.image.resolve()), "roi": [x0, y0, area_width, area_height], "color_boxes": boxes}
+    result = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(result)
+    print(result, end="")
+
+
 def perspective_markers(args):
     marker_row = bytes((19, 245, 71)) * 16
     write_rgb_png(args.asset_output, 16, 16, (b"\0" + marker_row) * 16)
@@ -249,6 +305,19 @@ def main():
     panel_parser = commands.add_parser("panel", help="生成 30x30 九宫格测试纹理")
     panel_parser.add_argument("--output", type=Path, required=True)
     panel_parser.set_defaults(run=color_panel)
+    scale9_parser = commands.add_parser("scale9", help="生成单个九宫格节点，隔离 size2 参数")
+    scale9_parser.add_argument("--output", type=Path, required=True)
+    scale9_parser.add_argument("--asset-name", default="panel.png")
+    scale9_parser.add_argument("--rect", default="10px,10px,10px,10px")
+    scale9_parser.add_argument("--size", default="90,90")
+    scale9_parser.add_argument("--pos", default="50%,25%")
+    scale9_parser.add_argument("--size2", help="保留原始 UIS 表达式，例如 0,540px")
+    scale9_parser.set_defaults(run=scale9_fixture)
+    measure_parser = commands.add_parser("measure-panel", help="量取九宫格纯色色块坐标，需要 ffmpeg")
+    measure_parser.add_argument("--image", type=Path, required=True)
+    measure_parser.add_argument("--roi", required=True, help="区域 x,y,width,height，避免画面其他纯色影响")
+    measure_parser.add_argument("--output", type=Path)
+    measure_parser.set_defaults(run=measure_panel)
     perspective_parser = commands.add_parser("perspective", help="生成 3x3 透视标记和纯色纹理")
     perspective_parser.add_argument("--angle", type=int, default=0)
     perspective_parser.add_argument("--no-apply", action="store_true", help="省略 @apply 3d，作为平面控制组")

@@ -3,6 +3,7 @@ package top.zedo.skin.uis.component;
 import javafx.scene.image.Image;
 import javafx.scene.image.PixelReader;
 import javafx.scene.image.WritableImage;
+import top.zedo.skin.uis.ExpressionVector;
 import top.zedo.skin.uis.UISComponent;
 import top.zedo.zxncore.ZXLogger;
 
@@ -12,6 +13,8 @@ public final class Scale9ComponentRenderer extends AbstractComponentRenderer {
     private int[] sourceX;
     private int[] sourceY;
     private boolean sliced;
+    private double borderScale;
+    private boolean scaledBorders;
 
     public Scale9ComponentRenderer(UISComponent component) {
         super(component);
@@ -23,9 +26,6 @@ public final class Scale9ComponentRenderer extends AbstractComponentRenderer {
         slices = new Image[3][3];
         sourceX = new int[4];
         sourceY = new int[4];
-        if (component.contains("size2")) {
-            ZXLogger.warning(component.getFullName() + " 的 type=5 size2 尚未按 4.3.7 校准，暂按未设置 size2 预览");
-        }
         if (tex == null || tex.isError() || tex.getPixelReader() == null) return;
         double[] rect;
         try {
@@ -68,8 +68,19 @@ public final class Scale9ComponentRenderer extends AbstractComponentRenderer {
 
     @Override
     void reloadPosComponent() {
-        // 4.3.7 uses size2 in this type, but its slicing rule is still under calibration.
-        // The verified rect + size path does not use it as the outer destination size.
+        scaledBorders = false;
+        borderScale = 1;
+        if (component.contains("size2")) {
+            ExpressionVector size2 = component.getExpressionVector("size2");
+            if (size2.getH() > 0) {
+                // 4.3.7 scales both axes' source borders by the canvas-height ratio.
+                // size2.x did not affect the measured 9-slice on the Android client.
+                borderScale = ec.getCanvasHeight() / size2.getH();
+                scaledBorders = true;
+            } else {
+                ZXLogger.warning(component.getFullName() + " 的 type=5 size2 高度须大于 0");
+            }
+        }
     }
 
     @Override
@@ -81,8 +92,8 @@ public final class Scale9ComponentRenderer extends AbstractComponentRenderer {
             drawImage(tex);
             return;
         }
-        double[] destinationX = destinationCuts(sourceX, targetWidth);
-        double[] destinationY = destinationCuts(sourceY, targetHeight);
+        double[] destinationX = destinationCuts(sourceX, targetWidth, borderScale, !scaledBorders);
+        double[] destinationY = destinationCuts(sourceY, targetHeight, borderScale, !scaledBorders);
         transform();
         for (int row = 0; row < 3; row++) {
             for (int column = 0; column < 3; column++) {
@@ -100,10 +111,14 @@ public final class Scale9ComponentRenderer extends AbstractComponentRenderer {
 
     static double[] destinationCuts(int[] source, double targetSize) {
         // 4.3.7 keeps the texture's border pixels at their native size when size2 is absent.
-        double left = source[1];
-        double right = source[3] - source[2];
+        return destinationCuts(source, targetSize, 1, true);
+    }
+
+    static double[] destinationCuts(int[] source, double targetSize, double borderScale, boolean fitBorders) {
+        double left = source[1] * borderScale;
+        double right = (source[3] - source[2]) * borderScale;
         double borders = left + right;
-        if (borders > targetSize) {
+        if (fitBorders && borders > targetSize) {
             double shrink = targetSize / borders;
             left *= shrink;
             right *= shrink;
