@@ -4,9 +4,12 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Tab;
+import javafx.scene.control.TabPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.image.Image;
@@ -15,12 +18,20 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import javafx.scene.layout.Pane;
+import javafx.scene.shape.Rectangle;
+import javafx.scene.transform.Rotate;
 import javafx.stage.Stage;
+import javafx.util.StringConverter;
 import top.zedo.skin.v.proto.SkinVProto.SkinFile;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Map;
 
 /** Module and metadata editor for a Malody V skin. */
 public final class VEditorPane extends BorderPane {
@@ -44,6 +55,9 @@ public final class VEditorPane extends BorderPane {
     private final Label moduleKind = new Label();
     private final Label previewStatus = new Label();
     private final ImageView preview = new ImageView();
+    private final Pane sceneCanvas = new Pane();
+    private final ComboBox<Integer> sceneLayer = new ComboBox<>();
+    private final Label sceneStatus = new Label();
     private int currentModule = -1;
     private boolean changingSelection;
 
@@ -82,8 +96,55 @@ public final class VEditorPane extends BorderPane {
         VBox imageBox = new VBox(10, new Label("选中组件资源预览"), preview, previewStatus);
         imageBox.setAlignment(Pos.TOP_CENTER);
         imageBox.setPadding(new Insets(12));
-        HBox content = new HBox(propertyScroll, imageBox);
-        HBox.setHgrow(imageBox, Priority.ALWAYS);
+        sceneCanvas.setPrefSize(640, 360);
+        sceneCanvas.setMinSize(640, 360);
+        sceneCanvas.setMaxSize(640, 360);
+        sceneCanvas.setClip(new Rectangle(640, 360));
+        sceneCanvas.setStyle("-fx-background-color: #20232a;");
+        sceneLayer.setConverter(new StringConverter<>() {
+            @Override public String toString(Integer layer) {
+                if (layer == null) return "";
+                return switch (layer) {
+                    case 1 -> "1 · 背景";
+                    case 2 -> "2 · 游玩区下层";
+                    case 3 -> "3 · 游玩区上层";
+                    case 4 -> "4 · 顶层";
+                    default -> layer + " · 其他";
+                };
+            }
+            @Override public Integer fromString(String text) { return null; }
+        });
+        for (SkinFile.Module module : draft.skin().getModulesList()) {
+            int layer = module.getParam().getLayer();
+            if (!sceneLayer.getItems().contains(layer)) sceneLayer.getItems().add(layer);
+        }
+        sceneLayer.getItems().sort(Integer::compareTo);
+        sceneLayer.setOnAction(_ -> refreshScene());
+        Integer firstLayer = null;
+        int mostImages = -1;
+        for (int layer : sceneLayer.getItems()) {
+            int count = 0;
+            for (SkinFile.Module module : draft.skin().getModulesList()) {
+                if (module.getParam().getLayer() == layer && VSceneLayout.supports(module)) count++;
+            }
+            if (count > mostImages) { firstLayer = layer; mostImages = count; }
+        }
+        if (firstLayer != null) sceneLayer.getSelectionModel().select(firstLayer);
+        Button refreshScene = new Button("应用属性并刷新");
+        refreshScene.setOnAction(_ -> { if (applyModule()) refreshScene(); });
+        HBox sceneTools = new HBox(8, new Label("图层"), sceneLayer, refreshScene);
+        sceneTools.setAlignment(Pos.CENTER_LEFT);
+        VBox sceneBox = new VBox(10, new Label("同层静态自定义图片布局概览 · 参考画布 16:9"), sceneTools,
+                new ScrollPane(sceneCanvas), sceneStatus,
+                new Label("依据 Emiria 基础位置、尺寸、pivot 和同层顺序；不等同游戏运行画面。"));
+        sceneBox.setPadding(new Insets(12));
+        Tab resourceTab = new Tab("单资源", imageBox);
+        Tab sceneTab = new Tab("布局概览", sceneBox);
+        resourceTab.setClosable(false);
+        sceneTab.setClosable(false);
+        TabPane previews = new TabPane(resourceTab, sceneTab);
+        HBox content = new HBox(propertyScroll, previews);
+        HBox.setHgrow(previews, Priority.ALWAYS);
         setCenter(content);
 
         title.setText(draft.metadata().getTitle());
@@ -104,6 +165,7 @@ public final class VEditorPane extends BorderPane {
             showModule(next);
         });
         if (!modules.getItems().isEmpty()) modules.getSelectionModel().selectFirst();
+        refreshScene();
     }
 
     private static HBox row(String label, TextField field) {
@@ -149,6 +211,57 @@ public final class VEditorPane extends BorderPane {
         height.setDisable(!module.hasImage());
         resource.setDisable(!VModuleResource.canEdit(module));
         refreshPreview(module);
+    }
+
+    private void refreshScene() {
+        sceneCanvas.getChildren().clear();
+        Integer layer = sceneLayer.getValue();
+        if (layer == null) {
+            sceneStatus.setText("此皮肤没有可显示的图层");
+            return;
+        }
+        ArrayList<Integer> indices = new ArrayList<>();
+        for (int i = 0; i < draft.moduleCount(); i++) {
+            if (draft.module(i).getParam().getLayer() == layer) indices.add(i);
+        }
+        indices.sort(Comparator.comparingInt((Integer i) -> draft.module(i).getParam().getOrder())
+                .thenComparingInt(i -> i));
+        Map<String, Image> images = new HashMap<>();
+        int shown = 0, unsupported = 0, missing = 0, capped = 0;
+        for (int index : indices) {
+            SkinFile.Module module = draft.module(index);
+            if (!VSceneLayout.supports(module)) { unsupported++; continue; }
+            if (shown >= 80) { capped++; continue; }
+            String filename = module.getImage().getFile();
+            Image image = images.get(filename);
+            if (image == null) {
+                try {
+                    byte[] data = document.resource(filename);
+                    if (data == null) { missing++; continue; }
+                    image = new Image(new ByteArrayInputStream(data));
+                    if (image.isError()) { missing++; continue; }
+                    images.put(filename, image);
+                } catch (IOException error) { missing++; continue; }
+            }
+            try {
+                VSceneLayout.Placement at = VSceneLayout.project(module, 640, 360,
+                        image.getWidth(), image.getHeight());
+                ImageView node = new ImageView(image);
+                node.setFitWidth(at.width());
+                node.setFitHeight(at.height());
+                node.setPreserveRatio(false);
+                node.setLayoutX(at.left());
+                node.setLayoutY(at.top());
+                node.setOpacity(at.opacity());
+                node.getTransforms().add(new Rotate(-at.rotate(),
+                        at.width() * at.pivotX(), at.height() * (1 - at.pivotY())));
+                sceneCanvas.getChildren().add(node);
+                shown++;
+            } catch (IllegalArgumentException error) { unsupported++; }
+        }
+        sceneStatus.setText("当前层 " + indices.size() + " 个模块；显示 " + shown + " 个静态图片，"
+                + "跳过 " + unsupported + " 个动态/特殊模块，资源缺失或无法解码 " + missing + " 个。"
+                + (capped > 0 ? "另有 " + capped + " 个超过 80 张显示上限。" : ""));
     }
 
     private void refreshPreview(SkinFile.Module module) {
@@ -200,6 +313,7 @@ public final class VEditorPane extends BorderPane {
         draft.updateMetadata(title.getText(), creator.getText(), description.getText(), cover.getText());
         try {
             document.save(draft.skin());
+            refreshScene();
             if (getScene() != null && getScene().getWindow() instanceof Stage stage) stage.setTitle("Malody V · " + title.getText());
             alert("已保存", document.path().toString());
         } catch (IOException error) {
