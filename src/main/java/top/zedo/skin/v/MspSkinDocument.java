@@ -105,20 +105,24 @@ public final class MspSkinDocument {
     public void save(SkinFile updated) throws IOException {
         Objects.requireNonNull(updated);
         if (!updated.hasMeta()) throw new IOException("不能保存缺少元数据的皮肤");
+        if (updated.getMeta().getTitle().isBlank()) throw new IOException("皮肤标题不能为空");
+        // A no-op save should not repack an archive or rewrite an unchanged info.asm.
+        if (updated.equals(skin)) return;
         Path temporary = Files.createTempFile(path.getParent(), ".malody-skin-", archive ? ".msp" : ".asm");
         try {
             if (archive) {
                 try (ZipFile source = new ZipFile(path.toFile());
                      OutputStream output = Files.newOutputStream(temporary);
                      ZipOutputStream target = new ZipOutputStream(output)) {
+                    if (source.getComment() != null) target.setComment(source.getComment());
                     Enumeration<? extends ZipEntry> entries = source.entries();
                     boolean wroteAsm = false;
                     while (entries.hasMoreElements()) {
                         ZipEntry old = entries.nextElement();
-                        ZipEntry copy = new ZipEntry(old.getName());
-                        copy.setTime(old.getTime());
+                        boolean isAsm = old.getName().equals(entryPrefix + "info.asm");
+                        ZipEntry copy = copyEntry(old, isAsm);
                         target.putNextEntry(copy);
-                        if (old.getName().equals(entryPrefix + "info.asm")) {
+                        if (isAsm) {
                             updated.writeTo(target);
                             wroteAsm = true;
                         } else if (!old.isDirectory()) {
@@ -141,5 +145,22 @@ public final class MspSkinDocument {
         } finally {
             Files.deleteIfExists(temporary);
         }
+    }
+
+    private static ZipEntry copyEntry(ZipEntry old, boolean isAsm) {
+        ZipEntry copy = new ZipEntry(old.getName());
+        if (old.getTime() >= 0) copy.setTime(old.getTime());
+        if (old.getLastAccessTime() != null) copy.setLastAccessTime(old.getLastAccessTime());
+        if (old.getCreationTime() != null) copy.setCreationTime(old.getCreationTime());
+        if (old.getComment() != null) copy.setComment(old.getComment());
+        if (!isAsm) {
+            if (old.getExtra() != null) copy.setExtra(old.getExtra());
+            copy.setMethod(old.getMethod());
+            if (old.getMethod() == ZipEntry.STORED) {
+                copy.setSize(old.getSize());
+                copy.setCrc(old.getCrc());
+            }
+        }
+        return copy;
     }
 }

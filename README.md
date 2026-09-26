@@ -2,6 +2,8 @@
 
 马老弟音游的非官方皮肤编辑与预览工具。支持打开 4.x `.mui` 和 Malody V `.msp`／`info.asm`。`.mui` 使用 JavaFX 画布预览组件与动画、切换设备比例和时间轴；V 皮肤可编辑元数据和部分组件参数，并预览选中组件的图片资源。
 
+`.mui` 文本编辑会自动保存，也可点击“保存”或按系统保存快捷键；关闭时若保存失败会提示并保留窗口。V 编辑器使用自己的“保存”按钮。两种格式分别保留源文件中未被编辑的内容：`.mui` 的原文 section、注释、编码和行尾，以及 `.msp` 的未知 protobuf 字段和素材。当前还没有画布拖拽编辑；实现时应通过源文档定位并修改属性，不能把展开 include／条件后的预览对象直接写回文件。
+
 ## 运行
 
 需要 JDK 22 或更新版本。项目自带 Maven Wrapper，无须单独安装 Maven。
@@ -42,6 +44,7 @@ Windows 使用 `mvnw.cmd`。首次运行会下载 Maven 和 JavaFX 依赖。应�
 
 - `src/main/java/top/zedo/skin/uis/ui`：JavaFX 编辑界面与代码区
 - `src/main/java/top/zedo/skin/uis/MuiSkinLoader.java`：读取 `.mui`、`@include` 与图片资源，生成一次加载结果
+- `src/main/java/top/zedo/skin/uis/MuiDocument.java`：保留 `.mui` 原文结构的属性编辑与保存模型
 - `src/main/java/top/zedo/skin/uis/UISSkin.java`：将加载结果同步到组件和渲染器
 - `src/main/java/top/zedo/skin/uis/component`：各类预览渲染器
 - `src/main/java/top/zedo/skin/v`：V 皮肤 `.msp`／`info.asm` 读写和基本属性编辑
@@ -61,4 +64,4 @@ Emiria 历史中找到的 UIS 解析器属于 5.0.0 原型，可用于核对 `@u
 
 连接可运行 4.3.7 的 Android 设备后，可用 [skin437_probe.py](scripts/skin437_probe.py) 生成九宫格纹理或透视九点标记、从一份 `.msz` 打包测试皮肤、推送到设备并保存带版本和皮肤选择信息的截图。操作步骤、实测坐标和已发现的脚本缓存行为写在校准记录中。
 
-V 的 `SkinFile` 结构取自 Emiria 当前源码，并用真实 `.msp` 样本验证了读取。V 编辑器目前是元数据和部分组件参数编辑器，尚未实现完整场景合成预览、所有组件类型的编辑或游戏内视觉一致性验证。
+V 的 `SkinFile` 结构取自 Emiria 当前源码；两份真实 `.msp` 样本已验证读取、无修改字节级回写和修改标题后的素材及未知字段保留。V 编辑器目前是元数据和部分组件参数编辑器，尚未实现完整场景合成预览、所有组件类型的编辑或游戏内导入验证。

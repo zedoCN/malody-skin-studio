@@ -2,12 +2,17 @@ package top.zedo.skin.v;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.Assumptions;
+import com.google.protobuf.UnknownFieldSet;
 import top.zedo.skin.v.proto.SkinVProto.SkinFile;
 
 import java.io.IOException;
+import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -64,5 +69,98 @@ class MspSkinDocumentTest {
 
         assertEquals("B", MspSkinDocument.open(folder).skin().getMeta().getTitle());
         assertEquals("derived cache", Files.readString(folder.resolve("info.json")));
+    }
+
+    @Test
+    void preservesUnknownFieldsAndZipEntryMetadata() throws IOException {
+        Path packageFile = directory.resolve("unknown.msp");
+        UnknownFieldSet unknown = UnknownFieldSet.newBuilder()
+                .addField(100, UnknownFieldSet.Field.newBuilder().addVarint(12345).build()).build();
+        SkinFile original = SkinFile.newBuilder()
+                .setMeta(SkinFile.Meta.newBuilder().setTitle("Before").setUnknownFields(unknown))
+                .addModules(SkinFile.Module.newBuilder().setMeta(SkinFile.ModuleMeta.newBuilder()
+                        .setDesc("Keep").setUnknownFields(unknown)).setUnknownFields(unknown))
+                .setUnknownFields(unknown).build();
+        byte[] asset = {10, 20, 30};
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(packageFile))) {
+            zip.setComment("archive comment");
+            zip.putNextEntry(new ZipEntry("info.asm"));
+            original.writeTo(zip);
+            zip.closeEntry();
+            ZipEntry stored = new ZipEntry("asset.bin");
+            stored.setMethod(ZipEntry.STORED);
+            stored.setSize(asset.length);
+            java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+            crc.update(asset);
+            stored.setCrc(crc.getValue());
+            stored.setComment("asset comment");
+            stored.setExtra(new byte[]{(byte) 0xfe, (byte) 0xca, 1, 0, 42});
+            zip.putNextEntry(stored);
+            zip.write(asset);
+            zip.closeEntry();
+        }
+        MspSkinDocument document = MspSkinDocument.open(packageFile);
+        byte[] beforeNoOp = Files.readAllBytes(packageFile);
+        assertThrows(IOException.class, () -> document.save(document.skin().toBuilder()
+                .setMeta(document.skin().getMeta().toBuilder().setTitle(" ")).build()));
+        assertArrayEquals(beforeNoOp, Files.readAllBytes(packageFile));
+        document.save(document.skin());
+        assertArrayEquals(beforeNoOp, Files.readAllBytes(packageFile));
+        document.save(document.skin().toBuilder()
+                .setMeta(document.skin().getMeta().toBuilder().setTitle("After")).build());
+
+        SkinFile saved = MspSkinDocument.open(packageFile).skin();
+        assertEquals("After", saved.getMeta().getTitle());
+        assertEquals(unknown, saved.getUnknownFields());
+        assertEquals(unknown, saved.getMeta().getUnknownFields());
+        assertEquals(unknown, saved.getModules(0).getUnknownFields());
+        assertEquals(unknown, saved.getModules(0).getMeta().getUnknownFields());
+        try (ZipFile zip = new ZipFile(packageFile.toFile())) {
+            assertEquals("archive comment", zip.getComment());
+            ZipEntry copied = zip.getEntry("asset.bin");
+            assertEquals(ZipEntry.STORED, copied.getMethod());
+            assertEquals("asset comment", copied.getComment());
+            assertArrayEquals(new byte[]{(byte) 0xfe, (byte) 0xca, 1, 0, 42}, copied.getExtra());
+            assertArrayEquals(asset, zip.getInputStream(copied).readAllBytes());
+        }
+    }
+
+    @Test
+    void roundTripsRealPackagesWhenProvided() throws IOException {
+        String paths = System.getProperty("malody.v.samples", "");
+        Assumptions.assumeFalse(paths.isBlank(), "Pass -Dmalody.v.samples=path1:path2 for local sample verification");
+        int index = 0;
+        for (String filename : paths.split(java.util.regex.Pattern.quote(File.pathSeparator))) {
+            Path source = Path.of(filename);
+            Path target = directory.resolve("sample-" + index++ + ".msp");
+            Files.copy(source, target);
+            MspSkinDocument document = MspSkinDocument.open(target);
+            SkinFile original = document.skin();
+            assertTrue(original.hasMeta());
+            assertTrue(original.getModulesCount() > 0);
+            byte[] unchanged = Files.readAllBytes(target);
+            document.save(original);
+            assertArrayEquals(unchanged, Files.readAllBytes(target));
+            document.save(original.toBuilder().setMeta(original.getMeta().toBuilder()
+                    .setTitle(original.getMeta().getTitle() + " (test)")).build());
+            SkinFile saved = MspSkinDocument.open(target).skin();
+            assertEquals(original.getMeta().getTitle() + " (test)", saved.getMeta().getTitle());
+            assertEquals(original.getModulesList(), saved.getModulesList());
+            assertEquals(original.getUnknownFields(), saved.getUnknownFields());
+            assertEquals(original.getMeta().getUnknownFields(), saved.getMeta().getUnknownFields());
+            try (ZipFile input = new ZipFile(source.toFile()); ZipFile output = new ZipFile(target.toFile())) {
+                assertEquals(input.size(), output.size());
+                var entries = input.entries();
+                while (entries.hasMoreElements()) {
+                    ZipEntry entry = entries.nextElement();
+                    ZipEntry copy = output.getEntry(entry.getName());
+                    assertNotNull(copy, entry.getName());
+                    if (!entry.getName().endsWith("info.asm")) {
+                        assertTrue(Arrays.equals(input.getInputStream(entry).readAllBytes(),
+                                output.getInputStream(copy).readAllBytes()), entry.getName());
+                    }
+                }
+            }
+        }
     }
 }
