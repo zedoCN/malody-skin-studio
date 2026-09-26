@@ -8,6 +8,10 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.attribute.PosixFilePermission;
+import java.util.Set;
 
 /** Old MUI skins in the wild use both UTF-8 and GB18030. */
 public final class MuiTextFile {
@@ -37,6 +41,16 @@ public final class MuiTextFile {
     }
 
     public record Decoded(String text, Charset charset, boolean utf8Bom) {
+        /** RichTextFX edits use LF internally; keep a source file's uniform line ending. */
+        public void writeEditorText(Path path, String contents) throws IOException {
+            String ending = uniformLineEnding(text);
+            if (ending != null && !ending.equals("\n")) {
+                contents = contents.replace("\r\n", "\n").replace('\r', '\n')
+                        .replace("\n", ending);
+            }
+            write(path, contents);
+        }
+
         public void write(Path path, String contents) throws IOException {
             byte[] bytes;
             try {
@@ -55,7 +69,41 @@ public final class MuiTextFile {
                 System.arraycopy(bytes, 0, withBom, 3, bytes.length);
                 bytes = withBom;
             }
-            Files.write(path, bytes);
+            Path target = Files.isSymbolicLink(path) ? path.toRealPath() : path;
+            Path temporary = Files.createTempFile(target.toAbsolutePath().getParent(), ".mui-save-", ".tmp");
+            try {
+                Files.write(temporary, bytes);
+                if (Files.exists(target)) {
+                    try {
+                        Set<PosixFilePermission> permissions = Files.getPosixFilePermissions(target);
+                        Files.setPosixFilePermissions(temporary, permissions);
+                    } catch (UnsupportedOperationException ignored) {
+                        // Non-POSIX file systems still support replacing the content.
+                    }
+                }
+                try {
+                    Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE,
+                            StandardCopyOption.REPLACE_EXISTING);
+                } catch (AtomicMoveNotSupportedException ignored) {
+                    Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+                }
+            } finally {
+                Files.deleteIfExists(temporary);
+            }
+        }
+
+        private static String uniformLineEnding(String text) {
+            String ending = null;
+            for (int i = 0; i < text.length(); i++) {
+                char character = text.charAt(i);
+                if (character != '\r' && character != '\n') continue;
+                String next = character == '\r' && i + 1 < text.length() && text.charAt(i + 1) == '\n'
+                        ? "\r\n" : String.valueOf(character);
+                if (ending != null && !ending.equals(next)) return null;
+                ending = next;
+                if (next.equals("\r\n")) i++;
+            }
+            return ending;
         }
     }
 }

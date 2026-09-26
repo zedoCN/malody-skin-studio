@@ -8,6 +8,7 @@ import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
+import javafx.scene.input.KeyCombination;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import org.fxmisc.flowless.VirtualizedScrollPane;
@@ -77,6 +78,11 @@ public class UISEditor extends HBox {
                 }
 
             });
+        }
+    };
+    Button saveFileButton = new Button("保存") {
+        {
+            setOnAction(_ -> saveActiveMui());
         }
     };
     /**
@@ -155,7 +161,7 @@ public class UISEditor extends HBox {
     /**
      * 顶部工具栏
      */
-    HBox topToolbar = new HBox(resolutionChoiceBox, deviceTypeChoiceBox, unitChoiceBox, scalingFactorLabel, scalingFactorSlider, openFileButton) {
+    HBox topToolbar = new HBox(resolutionChoiceBox, deviceTypeChoiceBox, unitChoiceBox, scalingFactorLabel, scalingFactorSlider, openFileButton, saveFileButton) {
         {
             setMinHeight(40);
             setBorder(new Border(new BorderStroke(Color.WHITE, BorderStrokeStyle.SOLID, CornerRadii.EMPTY, new BorderWidths(0, 0, 1, 0), new Insets(0))));
@@ -349,6 +355,7 @@ public class UISEditor extends HBox {
             ZXLogger.info("初始化配置");
             UISEditor uISEditor = new UISEditor();
             Scene scene = new Scene(uISEditor);
+            scene.getAccelerators().put(KeyCombination.keyCombination("Shortcut+S"), uISEditor::saveActiveMui);
             scene.getStylesheets().addAll("resources/baseExpansionPack/color/style.css");
             scene.getStylesheets().addAll("resources/baseExpansionPack/color/dark.css");
             Stage stage = new Stage();
@@ -367,7 +374,25 @@ public class UISEditor extends HBox {
                 for (Tab tab : uISEditor.tabPane.getTabs()) {
                     if (tab.getContent() instanceof VirtualizedScrollPane<?> pane
                             && pane.getContent() instanceof UISCodeArea codeArea) {
-                        codeArea.dispose();
+                        try {
+                            codeArea.saveNow();
+                        } catch (IOException error) {
+                            showSaveError(codeArea, error);
+                            event.consume();
+                            return;
+                        }
+                    }
+                }
+                for (Tab tab : uISEditor.tabPane.getTabs()) {
+                    if (tab.getContent() instanceof VirtualizedScrollPane<?> pane
+                            && pane.getContent() instanceof UISCodeArea codeArea) {
+                        try {
+                            codeArea.closeSafely();
+                        } catch (IOException error) {
+                            showSaveError(codeArea, error);
+                            event.consume();
+                            return;
+                        }
                     }
                 }
                 SkinConfig.save();
@@ -411,10 +436,33 @@ public class UISEditor extends HBox {
         VirtualizedScrollPane<UISCodeArea> vsPane = new VirtualizedScrollPane<>(uisCodeArea);
         VBox.setVgrow(vsPane, Priority.ALWAYS);
         tab.setContent(vsPane);
-        tab.setOnClosed(_ -> uisCodeArea.dispose());
+        tab.setOnCloseRequest(event -> {
+            try {
+                uisCodeArea.closeSafely();
+            } catch (IOException error) {
+                showSaveError(uisCodeArea, error);
+                event.consume();
+            }
+        });
         tabPane.getTabs().add(tab);
         tabPane.getSelectionModel().select(tab);
         //uisCanvas.loadSkin(path);
+    }
+
+    private void saveActiveMui() {
+        Tab tab = tabPane.getSelectionModel().getSelectedItem();
+        if (tab == null || !(tab.getContent() instanceof VirtualizedScrollPane<?> pane)
+                || !(pane.getContent() instanceof UISCodeArea codeArea)) return;
+        try {
+            codeArea.saveNow();
+        } catch (IOException error) {
+            showSaveError(codeArea, error);
+        }
+    }
+
+    private static void showSaveError(UISCodeArea codeArea, IOException error) {
+        new Alert(Alert.AlertType.ERROR,
+                "无法保存 MUI 文件 " + codeArea.getFile() + ": " + error.getMessage()).showAndWait();
     }
 
     public record UnitInfo(String name, String unit, int id) {

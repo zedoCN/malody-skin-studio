@@ -30,4 +30,15 @@ class MuiTextFileTest {
         assertThrows(IOException.class, () -> source.write(path, source.text() + "\ud800"));
         assertArrayEquals(beforeUnsupportedEdit, Files.readAllBytes(path));
     }
+
+    @Test
+    void keepsUniformCrLfWhenEditorUsesLf() throws IOException {
+        Path path = directory.resolve("skin.mui");
+        Files.writeString(path, "@version 4.3.7\r\n_image\r\n  pos=1,2\r\n");
+        MuiTextFile.Decoded source = MuiTextFile.read(path);
+
+        source.writeEditorText(path, "@version 4.3.7\n_image\n  pos=3,4\n");
+
+        assertEquals("@version 4.3.7\r\n_image\r\n  pos=3,4\r\n", Files.readString(path));
+    }
 }

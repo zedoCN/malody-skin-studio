@@ -63,17 +63,18 @@ public class UISCanvas extends LayerCanvasPane {
 
         for (AbstractComponentRenderer cr : componentRenders) {
             GraphicsContext gc = getGraphicsContext2D(cr.getLayoutName());
+            gc.save();
             try {
                 AbstractComponentRenderer anim = componentMap.get(cr.getMotion());
-                gc.save();
                 if (anim instanceof AnimationComponentRenderer renderer) {
                     renderer.update(gc, width, height, cr, currentTime);
                 }
                 cr.draw(gc, width, height, currentTime);
-                gc.restore();
             } catch (Exception e) {
                 ZXLogger.warning("绘制组件: " + cr.getComponent() + " 发生异常: " + e.getMessage());
                 cr.hide = true;
+            } finally {
+                gc.restore();
             }
         }
 
@@ -156,7 +157,9 @@ public class UISCanvas extends LayerCanvasPane {
 
     public void setDeviceType(DeviceType deviceType) {
         ZXLogger.info("设置设备类型: " + deviceType);
+        if (this.deviceType == deviceType) return;
         this.deviceType = deviceType;
+        if (skin != null) updateSkin();
     }
 
     public void loadSkin(Path uisPath) {

@@ -77,7 +77,13 @@ public class UISCodeArea extends CodeArea {
             }
         }).subscribe(this::applyHighlighting);
 
-        autoSave.setOnFinished(_ -> save());
+        autoSave.setOnFinished(_ -> {
+            try {
+                saveNow();
+            } catch (IOException error) {
+                ZXLogger.warning("保存 MUI 文件失败: " + error.getMessage());
+            }
+        });
         textProperty().addListener((observable, oldText, newText) -> {
             dirty = true;
             autoSave.playFromStart();
@@ -124,23 +130,30 @@ public class UISCodeArea extends CodeArea {
         return file;
     }
 
-    public void dispose() {
+    public void closeSafely() throws IOException {
         if (disposed) return;
         autoSave.stop();
-        save();
+        saveNow();
         disposed = true;
         executor.shutdownNow();
+        super.dispose();
     }
 
-    private void save() {
-        if (!dirty) return;
+    @Override
+    public void dispose() {
         try {
-            source.write(file, getText());
-            dirty = false;
-            saved.run();
+            closeSafely();
         } catch (IOException error) {
             ZXLogger.warning("保存 MUI 文件失败: " + file + " - " + error.getMessage());
         }
+    }
+
+    public void saveNow() throws IOException {
+        autoSave.stop();
+        if (!dirty) return;
+        source.writeEditorText(file, getText());
+        dirty = false;
+        saved.run();
     }
 
     private Task<StyleSpans<Collection<String>>> computeHighlightingAsync() {
