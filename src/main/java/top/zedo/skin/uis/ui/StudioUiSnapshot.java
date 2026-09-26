@@ -43,6 +43,9 @@ final class StudioUiSnapshot {
                 if (!startPage) workspace.open(skin);
                 workspace.applyCss();
                 workspace.layout();
+                muiEditor.fitPreviewToViewport();
+                workspace.layout();
+                if (muiEditor.uisCanvas.getNaturalWidth() > 0) muiEditor.uisCanvas.draw();
                 WritableImage snapshot = scene.snapshot(null);
                 BufferedImage png = new BufferedImage((int) snapshot.getWidth(), (int) snapshot.getHeight(),
                         BufferedImage.TYPE_INT_ARGB);

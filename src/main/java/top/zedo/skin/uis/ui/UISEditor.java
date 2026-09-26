@@ -44,6 +44,8 @@ public class UISEditor extends HBox {
     public static final ZXVersion VERSION = new ZXVersion(1, 1, 0, ZXVersion.ReleaseStatus.BETA);
     private DragSession dragSession;
     private boolean previewValid = true;
+    private boolean fitPreview = true;
+    private boolean updatingFitZoom;
     private final Map<Tab, MszWorkspace> packageTabs = new HashMap<>();
     private Runnable openFileRequest;
     private Consumer<Path> vOpenRequest;
@@ -65,6 +67,7 @@ public class UISEditor extends HBox {
                                 uisCanvas.loadSkin(codeArea.getFile());
                                 previewValid = true;
                                 previewStatus.setText("");
+                                Platform.runLater(UISEditor.this::fitPreviewToViewport);
                             } catch (IOException error) {
                                 showPreviewError(error, false);
                             }
@@ -72,8 +75,8 @@ public class UISEditor extends HBox {
                     }
             });
             VBox.setVgrow(this, Priority.ALWAYS);
-            setPrefWidth(640);
-            setMinWidth(640);
+            setPrefWidth(700);
+            setMinWidth(0);
             setTabClosingPolicy(TabClosingPolicy.ALL_TABS);
         }
     };
@@ -122,6 +125,7 @@ public class UISEditor extends HBox {
                     uisCanvas.setAspectRatio(newValue.getAspectRatio());
                     previewValid = true;
                     previewStatus.setText("");
+                    Platform.runLater(UISEditor.this::fitPreviewToViewport);
                 } catch (IOException error) {
                     showPreviewError(error, false);
                 }
@@ -168,23 +172,28 @@ public class UISEditor extends HBox {
             setSnapToTicks(true);
             setSnapToPixel(true);
             valueProperty().addListener((observable, oldValue, newValue) -> {
-                if (!isValueChanging()) {
-                    scalingFactorLabel.setText("缩放: " + (int) (newValue.doubleValue() * 100) + "%");
-                    try {
-                        uisCanvas.setZoomRate(newValue.doubleValue());
-                        previewValid = true;
-                        previewStatus.setText("");
-                    } catch (IOException error) {
-                        showPreviewError(error, false);
-                    }
-                }
+                if (!updatingFitZoom) fitPreview = false;
+                scalingFactorLabel.setText("缩放: " + Math.round(newValue.doubleValue() * 100) + "%");
+                if (!isValueChanging()) applyZoom(newValue.doubleValue());
+            });
+            valueChangingProperty().addListener((_, _, changing) -> {
+                if (!changing) applyZoom(getValue());
+            });
+        }
+    };
+    Button fitPreviewButton = new Button("适应预览") {
+        {
+            setTooltip(new Tooltip("让整个皮肤画面显示在右侧；拖动缩放滑块可放大检查细节"));
+            setOnAction(_ -> {
+                fitPreview = true;
+                fitPreviewToViewport();
             });
         }
     };
     /**
      * 顶部工具栏
      */
-    HBox topToolbar = new HBox(resolutionChoiceBox, deviceTypeChoiceBox, unitChoiceBox, scalingFactorLabel, scalingFactorSlider, openFileButton, saveFileButton) {
+    HBox topToolbar = new HBox(resolutionChoiceBox, deviceTypeChoiceBox, unitChoiceBox, scalingFactorLabel, scalingFactorSlider, fitPreviewButton, openFileButton, saveFileButton) {
         {
             setMinHeight(40);
             setBorder(new Border(new BorderStroke(Color.WHITE, BorderStrokeStyle.SOLID, CornerRadii.EMPTY, new BorderWidths(0, 0, 1, 0), new Insets(0))));
@@ -263,12 +272,15 @@ public class UISEditor extends HBox {
     };
     VBox sideVBox = new VBox(topToolbar, feedbackBar, tabPane, bottomToolbar) {
         {
-            setHgrow(this, Priority.ALWAYS);
-            setPrefWidth(260);
+            setPrefWidth(700);
+            setMinWidth(650);
+            setMaxWidth(700);
             setBackground(Background.fill(Color.BLACK));
             setBorder(new Border(new BorderStroke(Color.WHITE, BorderStrokeStyle.SOLID, CornerRadii.EMPTY, new BorderWidths(0, 1, 0, 0), new Insets(0))));
         }
     };
+    StackPane previewSurface = new StackPane(uisCanvas);
+    ScrollPane previewPane = new ScrollPane(previewSurface);
 
     public UISEditor() {
         getStyleClass().add("mui-editor");
@@ -283,11 +295,12 @@ public class UISEditor extends HBox {
         uisCanvas.addEventFilter(MouseEvent.MOUSE_RELEASED, this::finishPositionDrag);
 
 
-        uisCanvas.minWidthProperty().addListener((observable, oldValue, newValue) -> {
-            this.setMinWidth(newValue.doubleValue() + tabPane.getMinWidth());
-        });
-        uisCanvas.minHeightProperty().addListener((observable, oldValue, newValue) -> {
-            this.setMinHeight(newValue.doubleValue() + 40);
+        previewSurface.setPadding(new Insets(16));
+        previewPane.setPannable(true);
+        previewPane.setMinSize(0, 0);
+        previewPane.viewportBoundsProperty().addListener((_, _, bounds) -> {
+            previewSurface.setMinSize(bounds.getWidth(), bounds.getHeight());
+            fitPreviewToViewport();
         });
 
 
@@ -334,13 +347,40 @@ public class UISEditor extends HBox {
 
 
         animationTimer.start();
-        HBox.setHgrow(uisCanvas, Priority.ALWAYS);
-        getChildren().addAll(sideVBox, uisCanvas);
+        HBox.setHgrow(previewPane, Priority.ALWAYS);
+        getChildren().addAll(sideVBox, previewPane);
     }    /*Button reloadButton = new Button("重载") {
         {
             setOnAction(event -> uisCanvas.updateSkin());
         }
     };*/
+
+    void fitPreviewToViewport() {
+        if (!fitPreview || uisCanvas.getNaturalWidth() <= 0 || uisCanvas.getNaturalHeight() <= 0) return;
+        double availableWidth = previewPane.getViewportBounds().getWidth() - 32;
+        double availableHeight = previewPane.getViewportBounds().getHeight() - 32;
+        if (availableWidth <= 0 || availableHeight <= 0) return;
+        double zoom = Math.max(scalingFactorSlider.getMin(), Math.min(scalingFactorSlider.getMax(),
+                Math.min(availableWidth / uisCanvas.getNaturalWidth(),
+                        availableHeight / uisCanvas.getNaturalHeight())));
+        if (Math.abs(zoom - scalingFactorSlider.getValue()) < 0.005) return;
+        updatingFitZoom = true;
+        try {
+            scalingFactorSlider.setValue(zoom);
+        } finally {
+            updatingFitZoom = false;
+        }
+    }
+
+    private void applyZoom(double zoom) {
+        try {
+            uisCanvas.setZoomRate(zoom);
+            previewValid = true;
+            previewStatus.setText("");
+        } catch (IOException error) {
+            showPreviewError(error, false);
+        }
+    }
 
     public static void main(String[] args) {
         if (args.length > 0 && args[0].equals("--snapshot-ui")) {
@@ -412,7 +452,9 @@ public class UISEditor extends HBox {
             ZXLogger.info("初始化配置");
             UISEditor uISEditor = new UISEditor();
             SkinStudioWindow workspace = new SkinStudioWindow(uISEditor);
-            Scene scene = new Scene(workspace);
+            javafx.geometry.Rectangle2D screen = javafx.stage.Screen.getPrimary().getVisualBounds();
+            Scene scene = new Scene(workspace, Math.min(1440, screen.getWidth()),
+                    Math.min(900, screen.getHeight()));
             scene.getAccelerators().put(KeyCombination.keyCombination("Shortcut+O"), workspace::chooseAndOpen);
             scene.getAccelerators().put(KeyCombination.keyCombination("Shortcut+S"), workspace::saveActive);
             scene.getStylesheets().addAll("resources/baseExpansionPack/color/style.css");
@@ -422,15 +464,8 @@ public class UISEditor extends HBox {
             stage.setScene(scene);
             stage.setTitle("Malody Skin Studio " + VERSION);
             stage.show();
-            Runnable updateMinimumSize = () -> {
-                double windowExtraWidth = Math.max(0, stage.getWidth() - scene.getWidth());
-                double windowExtraHeight = Math.max(0, stage.getHeight() - scene.getHeight());
-                stage.setMinWidth(workspace.minWidth(-1) + windowExtraWidth);
-                stage.setMinHeight(workspace.minHeight(-1) + windowExtraHeight);
-            };
-            updateMinimumSize.run();
-            uISEditor.minWidthProperty().addListener((_, _, _) -> updateMinimumSize.run());
-            uISEditor.minHeightProperty().addListener((_, _, _) -> updateMinimumSize.run());
+            stage.setMinWidth(Math.min(1000, screen.getWidth()));
+            stage.setMinHeight(Math.min(600, screen.getHeight()));
             if (args.length > 0) {
                 String filename = String.join(" ", args);
                 if (filename.length() >= 2 && filename.startsWith("\"") && filename.endsWith("\"")) {
@@ -631,7 +666,7 @@ public class UISEditor extends HBox {
         UISCodeArea.SaveState state = codeArea.getSaveState();
         IOException error = codeArea.getSaveError();
         saveStatus.setText(switch (state) {
-            case IDLE -> "自动保存已开启";
+            case IDLE -> "修改左侧脚本会自动写回皮肤";
             case SAVING -> "自动保存中…";
             case SAVED -> "已保存";
             case FAILED -> error != null && error.getMessage() != null

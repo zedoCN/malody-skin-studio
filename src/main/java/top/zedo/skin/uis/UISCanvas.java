@@ -221,6 +221,14 @@ public class UISCanvas extends LayerCanvasPane {
         updateSkin();
     }
 
+    public double getNaturalWidth() {
+        return skin == null ? 0 : skin.unit * aspectRatio;
+    }
+
+    public double getNaturalHeight() {
+        return skin == null ? 0 : skin.unit;
+    }
+
 
     public void resetTime() {
         /*if (isPaused) {

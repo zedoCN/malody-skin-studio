@@ -58,7 +58,11 @@ final class SkinStudioWindow extends BorderPane {
         save.disableProperty().bind(documents.getSelectionModel().selectedItemProperty().isEqualTo(startTab));
         Menu file = new Menu("文件");
         file.getItems().addAll(open, openDirectory, save);
-        setTop(new MenuBar(file));
+        MenuItem quickStart = new MenuItem("快速上手…");
+        quickStart.setOnAction(_ -> showQuickStart());
+        Menu help = new Menu("帮助");
+        help.getItems().add(quickStart);
+        setTop(new MenuBar(file, help));
 
         muiEditor.setOpenFileRequest(this::chooseAndOpen);
         muiEditor.setVOpenRequest(this::openV);
@@ -144,6 +148,21 @@ final class SkinStudioWindow extends BorderPane {
         card.setMaxWidth(Double.MAX_VALUE);
         card.setMinWidth(260);
         return card;
+    }
+
+    private void showQuickStart() {
+        Alert guide = new Alert(Alert.AlertType.INFORMATION);
+        guide.setTitle("Malody Skin Studio · 快速上手");
+        guide.setHeaderText("打开皮肤后，左边编辑，右边预览");
+        guide.setContentText("4.x UIS（.mui / .msz）\n"
+                + "• 修改左侧脚本会自动写回原文件或皮肤包；也可按 ⌘/Ctrl+S 保存。\n"
+                + "• 用“适应预览”看完整画面；缩放滑块放大后可在预览区滚动查看。\n"
+                + "• 顶部切换设备和屏幕比例；底部播放、暂停或重放动画。\n"
+                + "• 预览中部分普通图片可以直接拖动位置。\n\n"
+                + "Malody V（.msp / info.asm / 皮肤目录）\n"
+                + "• 修改组件属性或 Lua 源码后，点击“保存皮肤”写回文件。\n\n"
+                + "建议先复制一份皮肤，再尝试修改。");
+        guide.showAndWait();
     }
 
     void chooseAndOpen() {
