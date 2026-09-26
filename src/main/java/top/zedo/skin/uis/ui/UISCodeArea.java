@@ -55,7 +55,7 @@ public class UISCodeArea extends CodeArea {
     private final PauseTransition autoSave = new PauseTransition(javafx.util.Duration.millis(200));
     private final Path file;
     private final MuiTextFile.Decoded source;
-    private final Runnable saved;
+    private final SaveHandler saved;
     private boolean dirty;
     private boolean disposed;
 
@@ -95,11 +95,16 @@ public class UISCodeArea extends CodeArea {
 
 
 
-    public UISCodeArea(Path file, Runnable saved) throws IOException {
+    @FunctionalInterface
+    public interface SaveHandler {
+        void saved() throws IOException;
+    }
+
+    public UISCodeArea(Path file, SaveHandler saved) throws IOException {
         this(file, saved, MuiTextFile.read(file));
     }
 
-    private UISCodeArea(Path file, Runnable saved, MuiTextFile.Decoded source) {
+    private UISCodeArea(Path file, SaveHandler saved, MuiTextFile.Decoded source) {
         super(source.text());
         this.file = file;
         this.source = source;
@@ -152,8 +157,8 @@ public class UISCodeArea extends CodeArea {
         autoSave.stop();
         if (!dirty) return;
         source.writeEditorText(file, getText());
+        saved.saved();
         dirty = false;
-        saved.run();
     }
 
     private Task<StyleSpans<Collection<String>>> computeHighlightingAsync() {

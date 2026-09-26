@@ -22,7 +22,9 @@ import top.zedo.skin.uis.UISCanvas;
 import top.zedo.skin.uis.SkinSnapshot;
 import top.zedo.skin.uis.SkinTrace;
 import top.zedo.skin.uis.MuiAudit;
+import top.zedo.skin.uis.MszAudit;
 import top.zedo.skin.uis.MuiPositionEditor;
+import top.zedo.skin.uis.MszWorkspace;
 import top.zedo.skin.uis.component.ImageComponentRenderer;
 import top.zedo.skin.v.MspInspector;
 import top.zedo.skin.v.VEditorPane;
@@ -33,12 +35,16 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
 
 public class UISEditor extends HBox {
 
     public static final ZXVersion VERSION = new ZXVersion(1, 1, 0, ZXVersion.ReleaseStatus.BETA);
     private DragSession dragSession;
     private boolean previewValid = true;
+    private final Map<Tab, MszWorkspace> packageTabs = new HashMap<>();
     Label previewStatus = new Label();
     UISCanvas uisCanvas = new UISCanvas() {
         {
@@ -78,7 +84,7 @@ public class UISEditor extends HBox {
                 if (Files.exists(file) & Files.isDirectory(file)) {
                     fileChooser.setInitialDirectory(file.toAbsolutePath().toFile());
                 }
-                fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Malody 皮肤", "*.mui", "*.msp", "info.asm"));
+                fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Malody 皮肤", "*.mui", "*.msz", "*.msp", "info.asm"));
 
                 // 显示文件选择对话框
                 File selectedFile = fileChooser.showOpenDialog(null);
@@ -367,6 +373,14 @@ public class UISEditor extends HBox {
             }
             return;
         }
+        if (args.length > 0 && args[0].equals("--audit-msz")) {
+            try {
+                MszAudit.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            } catch (IOException error) {
+                throw new RuntimeException(error);
+            }
+            return;
+        }
         /*if (args.length == 1 & args[0].equals("DEBUG"))
             DEBUG = true;*/
         ZXLogger.info("===== > Malody Skin Studio < =====");
@@ -428,6 +442,24 @@ public class UISEditor extends HBox {
                         }
                     }
                 }
+                for (MszWorkspace workspace : uISEditor.packageTabs.values()) {
+                    try {
+                        workspace.syncPending();
+                    } catch (IOException error) {
+                        new Alert(Alert.AlertType.ERROR, "无法同步 MSZ: " + error.getMessage()).showAndWait();
+                        event.consume();
+                        return;
+                    }
+                }
+                for (MszWorkspace workspace : uISEditor.packageTabs.values()) {
+                    try {
+                        workspace.close();
+                    } catch (IOException error) {
+                        new Alert(Alert.AlertType.ERROR, "无法清理 MSZ 临时目录: " + error.getMessage()).showAndWait();
+                        event.consume();
+                        return;
+                    }
+                }
                 for (Tab tab : uISEditor.tabPane.getTabs()) {
                     if (tab.getContent() instanceof VirtualizedScrollPane<?> pane
                             && pane.getContent() instanceof UISCodeArea codeArea) {
@@ -468,14 +500,70 @@ public class UISEditor extends HBox {
             }
             return;
         }
-        Tab tab = new Tab();
-        tab.setText(path.getFileName().toString());
-        UISCodeArea uisCodeArea;
-        try {
-            uisCodeArea = new UISCodeArea(path, () -> refreshPreview(true));
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+        if (filename.endsWith(".msz")) {
+            openMsz(path);
+            return;
         }
+        try {
+            openMuiTab(path, null, path.getFileName().toString());
+        } catch (IOException error) {
+            new Alert(Alert.AlertType.ERROR, "无法打开 MUI 皮肤: " + error.getMessage()).showAndWait();
+        }
+    }
+
+    private void openMsz(Path path) {
+        try {
+            Path archive = path.toRealPath();
+            for (Map.Entry<Tab, MszWorkspace> entry : packageTabs.entrySet()) {
+                if (entry.getValue().archive().equals(archive)) {
+                    tabPane.getSelectionModel().select(entry.getKey());
+                    previewStatus.setText("此 MSZ 已打开；关闭标签页后可选择另一脚本");
+                    return;
+                }
+            }
+            MszWorkspace workspace = MszWorkspace.open(path);
+            String selected;
+            if (workspace.scriptEntries().size() == 1) {
+                selected = workspace.scriptEntries().getFirst();
+            } else {
+                ChoiceDialog<String> choice = new ChoiceDialog<>(workspace.scriptEntries().getFirst(), workspace.scriptEntries());
+                choice.setTitle("选择 MSZ 脚本");
+                choice.setHeaderText(path.getFileName() + " 包含多个 .mui 脚本");
+                choice.setContentText("编辑脚本：");
+                Optional<String> answer = choice.showAndWait();
+                if (answer.isEmpty()) {
+                    workspace.close();
+                    return;
+                }
+                selected = answer.get();
+            }
+            try {
+                openMuiTab(workspace.scriptPath(selected), workspace,
+                        path.getFileName() + " / " + selected);
+            } catch (IOException | RuntimeException error) {
+                workspace.close();
+                throw error;
+            }
+        } catch (IOException | RuntimeException error) {
+            new Alert(Alert.AlertType.ERROR, "无法打开 MSZ 皮肤: " + error.getMessage()).showAndWait();
+        }
+    }
+
+    private void openMuiTab(Path path, MszWorkspace workspace, String title) throws IOException {
+        Tab tab = new Tab();
+        tab.setText(title);
+        UISCodeArea uisCodeArea = new UISCodeArea(path, () -> {
+            if (workspace != null) {
+                try {
+                    workspace.syncScript(path);
+                } catch (IOException error) {
+                    previewStatus.setText("MSZ 保存失败");
+                    previewStatus.setTooltip(new Tooltip(error.getMessage()));
+                    throw error;
+                }
+            }
+            refreshPreview(true);
+        });
         uisCodeArea.setAutoHeight(true);
         uisCodeArea.setAutoScrollOnDragDesired(true);
         VirtualizedScrollPane<UISCodeArea> vsPane = new VirtualizedScrollPane<>(uisCodeArea);
@@ -483,12 +571,16 @@ public class UISEditor extends HBox {
         tab.setContent(vsPane);
         tab.setOnCloseRequest(event -> {
             try {
+                uisCodeArea.saveNow();
+                if (workspace != null) workspace.close();
                 uisCodeArea.closeSafely();
+                packageTabs.remove(tab);
             } catch (IOException error) {
                 showSaveError(uisCodeArea, error);
                 event.consume();
             }
         });
+        if (workspace != null) packageTabs.put(tab, workspace);
         tabPane.getTabs().add(tab);
         tabPane.getSelectionModel().select(tab);
         //uisCanvas.loadSkin(path);
@@ -500,6 +592,11 @@ public class UISEditor extends HBox {
                 || !(pane.getContent() instanceof UISCodeArea codeArea)) return;
         try {
             codeArea.saveNow();
+            MszWorkspace workspace = packageTabs.get(tab);
+            if (workspace != null) {
+                workspace.syncPending();
+                refreshPreview(true);
+            }
         } catch (IOException error) {
             showSaveError(codeArea, error);
         }
@@ -566,18 +663,24 @@ public class UISEditor extends HBox {
             previewStatus.setText("");
             return;
         }
+        boolean sourceUpdated = false;
         try {
             MuiPositionEditor.Edit edit = MuiPositionEditor.prepare(session.image().getComponent(), dx, dy);
             UISCodeArea open = findOpenCodeArea(edit.file());
             if (open == null) {
                 edit.save();
+                sourceUpdated = true;
+                MszWorkspace workspace = workspaceFor(edit.file());
+                if (workspace != null) workspace.syncScript(edit.file());
                 refreshPreview(true);
             } else {
                 open.replaceText(edit.document().text());
+                sourceUpdated = true;
                 open.saveNow();
             }
         } catch (IOException | IllegalArgumentException | IllegalStateException error) {
             session.restore();
+            if (sourceUpdated) previewValid = false;
             previewStatus.setText("拖拽未保存");
             previewStatus.setTooltip(new Tooltip(error.getMessage()));
             ZXLogger.warning("拖拽 MUI 组件失败: " + error.getMessage());
@@ -588,6 +691,13 @@ public class UISEditor extends HBox {
         for (Tab tab : tabPane.getTabs()) {
             UISCodeArea area = codeArea(tab);
             if (area != null && area.getFile().toRealPath().equals(file.toRealPath())) return area;
+        }
+        return null;
+    }
+
+    private MszWorkspace workspaceFor(Path file) {
+        for (MszWorkspace workspace : packageTabs.values()) {
+            if (workspace.owns(file)) return workspace;
         }
         return null;
     }
