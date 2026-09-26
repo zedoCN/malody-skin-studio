@@ -10,8 +10,13 @@ public final class MspInspector {
     private MspInspector() { }
 
     public static void main(String[] args) throws IOException {
-        if (args.length != 1) throw new IllegalArgumentException("用法: --inspect-v <skin.msp|info.asm|skin-directory>");
-        MspSkinDocument document = MspSkinDocument.open(Path.of(args[0]));
+        if (args.length == 0) throw new IllegalArgumentException("用法: --inspect-v <skin.msp|info.asm|skin-directory>");
+        // javafx:run splits -Djavafx.args at spaces, including spaces inside a path.
+        String filename = String.join(" ", args);
+        if (filename.length() >= 2 && filename.startsWith("\"") && filename.endsWith("\"")) {
+            filename = filename.substring(1, filename.length() - 1);
+        }
+        MspSkinDocument document = MspSkinDocument.open(Path.of(filename));
         SkinFile skin = document.skin();
         System.out.println("文件: " + document.path());
         System.out.println("标题: " + skin.getMeta().getTitle());

@@ -135,7 +135,7 @@ public final class VEditorPane extends BorderPane {
         moduleKind.setText("用途 " + module.getUsage() + " · 类型 " + module.getType()
                 + " · 位置单位 " + param.getXu() + "/" + param.getYu());
         name.setText(module.getMeta().getDesc());
-        resource.setText(resourceValue(module));
+        resource.setText(VModuleResource.value(module));
         x.setText(Float.toString(param.getX()));
         y.setText(Float.toString(param.getY()));
         dx.setText(Float.toString(param.getDx()));
@@ -146,17 +146,8 @@ public final class VEditorPane extends BorderPane {
         rotate.setText(Integer.toString(param.getRotate()));
         width.setDisable(!module.hasImage());
         height.setDisable(!module.hasImage());
-        resource.setDisable(!(module.hasImage() || module.hasText()));
+        resource.setDisable(!VModuleResource.canEdit(module));
         refreshPreview(module);
-    }
-
-    private static String resourceValue(SkinFile.Module module) {
-        if (module.hasImage()) return module.getImage().getFile();
-        if (module.hasText()) return module.getText().getText();
-        if (module.hasNumber()) return module.getNumber().getFile();
-        if (module.hasNote() && module.getNote().getImagesCount() > 0) return module.getNote().getImages(0).getFile();
-        if (module.hasImages() && module.getImages().getItemsCount() > 0) return module.getImages().getItems(0).getFile();
-        return "";
     }
 
     private void refreshPreview(SkinFile.Module module) {
@@ -165,7 +156,7 @@ public final class VEditorPane extends BorderPane {
             previewStatus.setText("文字模块：" + module.getText().getText());
             return;
         }
-        String filename = resourceValue(module);
+        String filename = VModuleResource.value(module);
         if (filename.isBlank()) {
             previewStatus.setText("此组件没有独立图片资源");
             return;
@@ -174,6 +165,10 @@ public final class VEditorPane extends BorderPane {
             byte[] data = document.resource(filename);
             if (data == null) {
                 previewStatus.setText("找不到资源：" + filename);
+                return;
+            }
+            if (module.hasSound()) {
+                previewStatus.setText(filename + " · 音频资源 · " + data.length + " 字节");
                 return;
             }
             Image image = new Image(new ByteArrayInputStream(data));
@@ -202,14 +197,11 @@ public final class VEditorPane extends BorderPane {
             }
             if (module.hasImage()) {
                 float newWidth = parseFinite(width), newHeight = parseFinite(height);
-                if (!resource.getText().equals(module.getImage().getFile())
-                        || newWidth != module.getImage().getWidth() || newHeight != module.getImage().getHeight()) {
-                    module.getImageBuilder().setFile(resource.getText()).setWidth(newWidth).setHeight(newHeight);
+                if (newWidth != module.getImage().getWidth() || newHeight != module.getImage().getHeight()) {
+                    module.getImageBuilder().setWidth(newWidth).setHeight(newHeight);
                 }
-            } else if (module.hasText()) {
-                if (!resource.getText().equals(module.getText().getText())) module.getTextBuilder().setText(resource.getText());
             }
-            draft.setModules(currentModule, module);
+            draft.setModules(currentModule, VModuleResource.withValue(module.build(), resource.getText()));
             modules.getItems().set(currentModule, moduleLabel(currentModule));
             return true;
         } catch (NumberFormatException error) {
