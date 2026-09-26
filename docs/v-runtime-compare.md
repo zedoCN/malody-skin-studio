@@ -25,10 +25,21 @@
 {
   "skinDir": "/absolute/path/to/extracted-skin",
   "chartPath": "/absolute/path/to/extracted-chart/slide_easy.mc",
-  "startOffset": 0
+  "startOffset": 0,
+  "freezeAtAudioMs": 10000
 }
 ```
 
-执行 Unity 菜单 `Tools/Malody/Codex/Play Skin Fixture`。入口等待 PlayMode 和歌曲扫描，以谱面绝对路径选中 Chart，指定 Skin 后进入 ScenePlay。`Library/CodexSkinFixture.status.json` 的 `phase` 为 `scene-play` 时，可以等待加载结束再抓 Game View；`failed` 时读取 `detail`。`startOffset` 单位为毫秒。Game View 捕获仍须检查返回的 `sourceWidth`、`sourceHeight`，并记录实际游戏时间；入口目前没有冻结游戏时间或强制 Lua 更新到特定帧。
+执行 Unity 菜单 `Tools/Malody/Codex/Play Skin Fixture`。入口等待 PlayMode 和歌曲扫描，以谱面绝对路径选中 Chart，指定 Skin 后进入 ScenePlay。`startOffset` 和 `freezeAtAudioMs` 单位均为毫秒；省略 `freezeAtAudioMs` 或设为 `0` 时正常播放。设为正数时，入口等待 ChartPlayer 的图形更新达到该音频时刻，再用 `ScenePlay.DoStreamPause()` 暂停音频、谱面和 PlayBehavior（包括 Lua）。`Library/CodexSkinFixture.status.json` 的 `phase` 为 `chart-time-frozen` 后可截图，其中还记录实际 `audioTimeMs`、`chartTimeMs`、`displayTimeMs` 和 `unityFrame`；`failed` 时读取 `detail`。暂停点可能越过目标几毫秒，须以状态文件中的实际时间为准。
 
-2026-09-26 用 Emiria `d3b60d0fd`、EX Rhythm Master VI 的隔离副本和 R.I.P. 的 `slide_easy.mc` 实测：Unity 正常进入 ScenePlay，捕获到 **1752×986** 的最终 Game View；本项目同尺寸、`windows` 平台、图层 `1` 的静态 PNG 可用于几何对照。首次用同曲 `4k_easy.mc` 被 `Skin.SupportPlayMode` 拒绝，说明入口确实执行了游戏的模式检查。图层 1 中四个固定图标的边框位置目视相差约 1–2 px，尚未发现可确定归因于静态布局计算的偏差。赛道边沿在两图中的位置不同，但运行截图还叠有游戏赛道、Lua、图层 4 和游戏 UI，不能直接把整图像素误差或这些边沿差异当作静态渲染缺陷。当前证据只证明对照链可运行，不证明所有模块与游戏像素一致。
+同一暂停状态下可用 `Tools/Malody/Codex/Hide Skin Layer 1`、`Show Skin Layer 1`、`Hide Skin Layer 4`、`Show Skin Layer 4` 临时切换相应皮肤 Canvas，并分别抓 Game View。切换只作用于运行中的场景；比较结束后恢复显示并退出 PlayMode。以下命令报告隐藏前后的变化范围，并可检查恢复后的画面是否逐像素一致：
+
+```sh
+uv run scripts/v_capture_diff.py full.png hidden-layer1.png --restored restored.png --mask target/debug/layer1-mask.png
+```
+
+这里的变化遮罩表示该 Canvas 对最终画面的**可见贡献**，不会包含被其他层遮挡的像素，也不能直接还原源模块的 RGBA 图。Game View 捕获仍须检查返回的 `sourceWidth`、`sourceHeight`。任意 Lua 脚本可能依赖帧数或系统时间；此入口固定的是已经运行到的画面和时钟，不提供任意时刻的无副作用重放。
+
+2026-09-26 用 Emiria `d3b60d0fd`、EX Rhythm Master VI 的隔离副本和 R.I.P. 的 `slide_easy.mc` 实测：Unity 正常进入 ScenePlay，捕获到 **1752×986** 的最终 Game View。目标音频时刻为 10000 ms，实际暂停于 **10001.07 ms**；隐藏图层 1 与图层 4 后，分别有约 65% 与 14% 的最终画面像素变化。两层都恢复显示后，整张 PNG 的 SHA-256 与最初截图相同，说明暂停后的图层对照可重复。本项目同尺寸、`windows` 平台、图层 `1` 的静态 PNG 可用于几何对照。首次用同曲 `4k_easy.mc` 被 `Skin.SupportPlayMode` 拒绝，说明入口确实执行了游戏的模式检查。图层 1 中四个固定图标的边框位置目视相差约 1–2 px；其他区域仍须按模块识别，不能直接把整图差异当作静态布局缺陷。
+
+这次最明显的赛道横杆差异已经定位到 Lua，而非画布坐标：背景层模块 `#16`（`trackbg`，`1712474142416.png`）原始高度为 1200 Unit；样本的 `rmslideEXF.lua` 根据 `Game:FieldMeta("Angle")` 计算 `trackscale = 1 - (angle - 30) / 200`，并在第 360–362 行改写模块宽高。此次游戏配置的角度为 45°，所以高度乘以 **0.925**；横杆从原始参数快照的约 `y=790` 移到 Unity 画面的约 `y=733`。隐藏图层 1 时该横杆随之消失。说明当前预览中的“静态”仅指原始模块参数可投影，**不保证模块在 Lua 运行后仍保持该位置和尺寸**；因此暂不改动 `VSceneLayout` 公式。

@@ -6,6 +6,7 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Locale;
@@ -30,7 +31,8 @@ public final class MspInspector {
         if (filename.length() >= 2 && filename.startsWith("\"") && filename.endsWith("\"")) {
             filename = filename.substring(1, filename.length() - 1);
         }
-        MspSkinDocument document = MspSkinDocument.open(Path.of(filename));
+        MspSkinDocument document = MspSkinDocument.open(
+                filename.startsWith("file:") ? Path.of(URI.create(filename)) : Path.of(filename));
         SkinFile skin = document.skin();
         System.out.println("文件: " + document.path());
         System.out.println("标题: " + skin.getMeta().getTitle());
