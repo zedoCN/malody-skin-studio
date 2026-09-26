@@ -363,7 +363,11 @@ public class UISEditor extends HBox {
             stage.setTitle("Malody Skin Studio " + VERSION);
             stage.show();
             if (args.length > 0) {
-                Path initialFile = Path.of(args[0]);
+                String filename = String.join(" ", args);
+                if (filename.length() >= 2 && filename.startsWith("\"") && filename.endsWith("\"")) {
+                    filename = filename.substring(1, filename.length() - 1);
+                }
+                Path initialFile = Path.of(filename);
                 if (Files.isRegularFile(initialFile)) {
                     uISEditor.openFIle(initialFile);
                 } else {

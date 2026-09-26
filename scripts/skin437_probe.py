@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import struct
+import time
 import zlib
 from datetime import datetime, timezone
 from pathlib import Path
@@ -299,6 +300,39 @@ def capture(args):
     print(f"截图: {output}\n证据: {output.with_suffix('.json')}")
 
 
+def capture_burst(args):
+    if args.count < 1 or args.count > 120 or args.interval < 0.1:
+        raise ValueError("count 应为 1–120，interval 应至少为 0.1 秒")
+    output = args.output.resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    package_info = adb(args.serial, "shell", "dumpsys", "package", APP_ID)
+    version = re.search(r"versionName=([^\s]+)", package_info)
+    if not version or version.group(1) != "4.3.7":
+        raise RuntimeError("设备上的 Malody 版本不是 4.3.7")
+    config = json.loads(adb(args.serial, "shell", "cat", "/sdcard/data/malody/config.json"))
+    frames = []
+    next_capture = time.monotonic()
+    for index in range(args.count):
+        delay = next_capture - time.monotonic()
+        if delay > 0:
+            time.sleep(delay)
+        captured_at = datetime.now(timezone.utc).isoformat()
+        result = subprocess.run(["adb", "-s", args.serial, "exec-out", "screencap", "-p"],
+                                capture_output=True)
+        if result.returncode or not result.stdout.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise RuntimeError(f"第 {index} 帧截图失败: {result.stderr.decode(errors='replace').strip()}")
+        filename = f"frame-{index:03d}.png"
+        path = output / filename
+        path.write_bytes(result.stdout)
+        frames.append({"file": filename, "captured_at_utc": captured_at, "sha256": sha256(path)})
+        next_capture += args.interval
+    manifest = {"device_serial": args.serial, "app_version": version.group(1),
+                "skin_selection": config.get("user_skin_name", ""), "interval_seconds": args.interval,
+                "frames": frames}
+    (output / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+    print(f"连拍: {len(frames)} 帧\n证据: {output / 'manifest.json'}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -345,6 +379,12 @@ def main():
     capture_parser.add_argument("--serial", required=True)
     capture_parser.add_argument("--output", type=Path, required=True)
     capture_parser.set_defaults(run=capture)
+    burst_parser = commands.add_parser("capture-burst", help="用 adb exec-out 连拍并记录各帧时间与 SHA-256")
+    burst_parser.add_argument("--serial", required=True)
+    burst_parser.add_argument("--output", type=Path, required=True, help="帧文件和 manifest.json 的输出目录")
+    burst_parser.add_argument("--count", type=int, default=24)
+    burst_parser.add_argument("--interval", type=float, default=1.0, help="目标截图间隔，秒")
+    burst_parser.set_defaults(run=capture_burst)
     args = parser.parse_args()
     args.run(args)
 

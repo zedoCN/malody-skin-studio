@@ -12,8 +12,12 @@ public final class MuiAudit {
     private MuiAudit() { }
 
     public static void main(String[] args) throws IOException {
-        if (args.length != 1) throw new IllegalArgumentException("用法: --audit-mui <skin.mui|directory>");
-        Path input = Path.of(args[0]);
+        if (args.length == 0) throw new IllegalArgumentException("用法: --audit-mui <skin.mui|directory>");
+        String filename = String.join(" ", args);
+        if (filename.length() >= 2 && filename.startsWith("\"") && filename.endsWith("\"")) {
+            filename = filename.substring(1, filename.length() - 1);
+        }
+        Path input = Path.of(filename);
         List<Path> files;
         if (Files.isDirectory(input)) {
             try (Stream<Path> paths = Files.walk(input)) {
