@@ -16,12 +16,12 @@ class MuiDocumentTest {
     @Test
     void realSampleRoundTripsWithoutChangingBytesAndEditsOneLiteralSection() throws IOException {
         for (String name : new String[] {"动画", "背景移动", "基本", "斜切"}) {
-            Path sample = Path.of("examples", name + ".mui");
+            Path sample = Path.of("examples", "uis", name + ".mui");
             MuiDocument.read(sample).save(directory.resolve(name + ".mui"));
             assertArrayEquals(Files.readAllBytes(sample),
                     Files.readAllBytes(directory.resolve(name + ".mui")), name);
         }
-        Path sample = Path.of("examples/基本.mui");
+        Path sample = Path.of("examples/uis/基本.mui");
         byte[] original = Files.readAllBytes(sample);
         MuiDocument document = MuiDocument.read(sample);
         Path copy = directory.resolve("copy.mui");

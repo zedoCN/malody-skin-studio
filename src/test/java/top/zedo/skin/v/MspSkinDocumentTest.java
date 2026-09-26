@@ -2,7 +2,6 @@ package top.zedo.skin.v;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.api.Assumptions;
 import com.google.protobuf.UnknownFieldSet;
 import top.zedo.skin.v.proto.SkinVProto.SkinFile;
 
@@ -275,9 +274,9 @@ class MspSkinDocumentTest {
     }
 
     @Test
-    void roundTripsRealPackagesWhenProvided() throws IOException {
-        String paths = System.getProperty("malody.v.samples", "");
-        Assumptions.assumeFalse(paths.isBlank(), "Pass -Dmalody.v.samples=path1:path2 for local sample verification");
+    void roundTripsBundledOrProvidedRealPackages() throws IOException {
+        String paths = System.getProperty("malody.v.samples",
+                "examples/asm/6091_EX_Rhythm_Master_VI (1).msp");
         int index = 0;
         for (String filename : paths.split(java.util.regex.Pattern.quote(File.pathSeparator))) {
             Path source = Path.of(filename);

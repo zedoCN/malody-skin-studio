@@ -145,7 +145,7 @@ class MuiSkinLoaderTest {
     @Test
     void loadsBundledSampleSkins() throws IOException {
         for (String name : new String[]{"基本", "动画", "斜切"}) {
-            Path path = Path.of("examples", name + ".mui");
+            Path path = Path.of("examples", "uis", name + ".mui");
             UISSkin skin = new UISSkin(path, new ExpressionCalculator(1280, 720, 720));
             MuiSkinLoader.Result result = new MuiSkinLoader(skin, new HashMap<>()).load(path);
             assertFalse(result.components().isEmpty(), name);

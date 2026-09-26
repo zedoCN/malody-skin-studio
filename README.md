@@ -20,7 +20,7 @@
 也可以在启动时打开样例皮肤：
 
 ```sh
-./mvnw javafx:run -Djavafx.args=examples/基本.mui
+./mvnw javafx:run -Djavafx.args=examples/uis/基本.mui
 ```
 
 Windows 使用 `mvnw.cmd`。首次运行会下载 Maven 和 JavaFX 依赖。应用退出时把最近打开目录写入工作目录的 `config.json`；该文件不纳入版本控制。
@@ -30,10 +30,10 @@ Windows 使用 `mvnw.cmd`。首次运行会下载 Maven 和 JavaFX 依赖。应�
 可以用同一皮肤、时间点和设备比例重复生成预览图，便于比较渲染修改：
 
 ```sh
-./mvnw javafx:run '-Djavafx.args=--snapshot examples/基本.mui target/debug/basic-0.png 0 PC'
-./mvnw javafx:run '-Djavafx.args=--trace-mui examples/基本.mui target/debug/basic-0.json 0 PC'
+./mvnw javafx:run '-Djavafx.args=--snapshot examples/uis/基本.mui target/debug/basic-0.png 0 PC'
+./mvnw javafx:run '-Djavafx.args=--trace-mui examples/uis/基本.mui target/debug/basic-0.json 0 PC'
 ./mvnw javafx:run '-Djavafx.args=--snapshot-v /path/to/skin.msp target/debug/v-layer1.png 1 android 1920x1080'
-./mvnw javafx:run '-Djavafx.args=--snapshot-ui examples/基本.mui target/debug/studio-ui.png'
+./mvnw javafx:run '-Djavafx.args=--snapshot-ui examples/uis/基本.mui target/debug/studio-ui.png'
 ./mvnw javafx:run '-Djavafx.args=--snapshot-ui --start target/debug/studio-start.png'
 ```
 
@@ -72,7 +72,8 @@ Windows 使用 `mvnw.cmd`。首次运行会下载 Maven 和 JavaFX 依赖。应�
 - `src/main/java/top/zedo/skin/plist`：纹理包拆图
 - `src/main/resources`：应用样式和图标
 - `src/test/java`：解析边界与关键计算测试
-- `examples`：用于验证预览的 `.mui` 文件和资源
+- `examples/uis`：4.3.7 UIS 脚本、素材和 `.msz` 示例
+- `examples/asm`：Malody V 的 `.msp` 示例，可直接拖入编辑器或通过「打开皮肤」选择
 
 本仓库从 [ZXNoter 的 `UISEditor` 分支](https://github.com/ZX-Organization/ZXNoter/tree/UISEditor) 提取。原分支的 `UISEditor`、早期 `ZXNoterUIFrame` 和 `docs/UISEditorTest` 的相关提交历史已保留；提取基点是原仓库提交 `fc5441a4ed710d2cda43af43c1c605b73dc7c9e7`。原分支中未参与应用构建的旧窗口原型、旧渲染器和未完成的格式转换实验没有保留在当前文件树中，可从历史提交查阅。
 
