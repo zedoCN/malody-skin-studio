@@ -60,8 +60,10 @@ class UISSkinRendererLifecycleTest {
         assertNotNull(canvas.pickEditableImage(45, 665));
         assertNull(canvas.pickEditableImage(25, 665));
 
-        Files.writeString(script, "_item\n  type=0\n  tex=missing.png\n  pos=50px,50px\n  size=20px,20px\n  anchor=10,10\n");
+        Files.writeString(script, "_item\n  type=0\n  tex=missing.png\n  pos=50px,50px\n  size=20px,20px\n  anchor=0,0\n");
         canvas.updateSkin();
         assertNull(canvas.pickEditableImage(45, 665));
+        assertNotNull(canvas.pickEditableImage(55, 655));
+        assertNull(canvas.pickEditableImage(55, 675));
     }
 }

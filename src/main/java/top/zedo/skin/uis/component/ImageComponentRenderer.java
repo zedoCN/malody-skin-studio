@@ -3,8 +3,7 @@ package top.zedo.skin.uis.component;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.effect.BlendMode;
-import javafx.geometry.HPos;
-import javafx.geometry.VPos;
+import javafx.geometry.Point2D;
 import top.zedo.skin.basis.RenderRectangle;
 import top.zedo.skin.uis.UISComponent;
 
@@ -20,19 +19,16 @@ public class ImageComponentRenderer extends AbstractComponentRenderer {
         if (!getName().startsWith("_") || type != 0 || hide || opacity <= 0 || tex == null
                 || tex.isError() || is3DLayout() || rotate != 0 || flip != null
                 || getMotion() != null || component.contains("motion")
-                || (component.getRawProperty("anchor") != null
-                    && component.getRawProperty("anchor").contains(","))
                 || skew.getW() != 0 || skew.getH() != 0 || pos == null || size == null
                 || component.getPropertySource("pos") == null
                 || component.hasPositionParent()
                 || component.getPropertySource("pos").grouped()) return false;
         double width = size.getW(), height = size.getH();
         if (!Double.isFinite(width) || !Double.isFinite(height) || width <= 0 || height <= 0) return false;
-        double left = pos.getX() - (anchor.getHpos() == HPos.CENTER ? width / 2
-                : anchor.getHpos() == HPos.RIGHT ? width : 0);
-        double top = pos.getY() - (anchor.getVpos() == VPos.CENTER ? height / 2
-                : anchor.getVpos() == VPos.BOTTOM ? height : 0);
-        return x >= left && x <= left + width && y >= top && y <= top + height;
+        transform();
+        Point2D topLeft = affine.transform(pos.getX(), pos.getY());
+        return x >= topLeft.getX() && x <= topLeft.getX() + width
+                && y >= topLeft.getY() && y <= topLeft.getY() + height;
     }
 
     @Override
