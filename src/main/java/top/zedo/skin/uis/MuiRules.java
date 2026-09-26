@@ -16,6 +16,11 @@ public final class MuiRules {
     public static double opacityFromPercent(double percent) {
         return (((int) (float) (percent * 2.55)) & 0xff) / 255.0;
     }
+
+    /** ARM64 FRINTA: nearest integer, with halfway values rounded away from zero. */
+    public static double roundInitialPosition(double value) {
+        return Math.copySign(Math.floor(Math.abs(value) + 0.5), value);
+    }
     // Existing editor preview convention; 4.3.7 runtime equivalence still needs visual proof.
     public static final int PERSPECTIVE_LAYER_FIRST = 1;
     public static final int PERSPECTIVE_LAYER_END = 99;

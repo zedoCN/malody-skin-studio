@@ -111,6 +111,15 @@ public class ExpressionVector {
         y = expressionCalculator.getCanvasHeight() - h;
     }
 
+    /** Apply 4.3.7's initial node position rounding before bottom-origin Y inversion. */
+    public void roundInitialPosition() {
+        if (parent != null) return;
+        x = MuiRules.roundInitialPosition(x);
+        w = x;
+        h = MuiRules.roundInitialPosition(h);
+        y = expressionCalculator.getCanvasHeight() - h;
+    }
+
 
     public double getW() {
         if (parent != null)

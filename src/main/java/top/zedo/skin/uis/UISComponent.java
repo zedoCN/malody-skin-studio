@@ -359,6 +359,10 @@ public class UISComponent {
         };
     }
 
+    public MuiPixelAnchor getPixelAnchor() {
+        return MuiPixelAnchor.parse(getRawProperty("anchor"));
+    }
+
     /**
      * 获取图片序列
      *

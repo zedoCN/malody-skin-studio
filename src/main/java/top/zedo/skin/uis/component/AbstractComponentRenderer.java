@@ -18,6 +18,7 @@ import top.zedo.skin.uis.ExpressionCalculator;
 import top.zedo.skin.uis.ExpressionVector;
 import top.zedo.skin.uis.UISComponent;
 import top.zedo.skin.uis.MuiRules;
+import top.zedo.skin.uis.MuiPixelAnchor;
 import top.zedo.ui.component.LayerCanvasPane;
 
 /**
@@ -262,6 +263,7 @@ public abstract class AbstractComponentRenderer implements RenderInterface {
     private void reloadPosComponent_() {
         pixelMagnification = component.expressionCalculator.getPixelMagnification();
         pos = component.getExpressionVector("pos");
+        pos.roundInitialPosition();
         size = component.getExpressionVector("size");
 
         flip = component.getOrientation("flip");
@@ -440,6 +442,16 @@ public abstract class AbstractComponentRenderer implements RenderInterface {
             case CENTER, BASELINE -> size.getH() / 2;
             case BOTTOM -> size.getH();
         };
+
+        // Native 4.3.7 stores comma anchors as pixels in original content size.
+        // For plain image sprites the source texture dimensions are that content size.
+        MuiPixelAnchor pixelAnchor = component.getPixelAnchor();
+        if (pixelAnchor != null && this instanceof ImageComponentRenderer
+                && type == 0 && tex != null && !tex.isError()
+                && tex.getWidth() > 0 && tex.getHeight() > 0) {
+            anchorX = pixelAnchor.offsetX(size.getW(), tex.getWidth());
+            anchorY = pixelAnchor.offsetY(size.getH(), tex.getHeight());
+        }
 
 
         // 旋转变换
