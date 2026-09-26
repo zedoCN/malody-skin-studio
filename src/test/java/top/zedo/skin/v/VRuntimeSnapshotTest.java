@@ -42,6 +42,26 @@ class VRuntimeSnapshotTest {
     }
 
     @Test
+    void reportsOnlyComparableRuntimeChanges() throws IOException {
+        JsonObject root = fixture();
+        JsonObject changed = row("target", 1, 160);
+        root.getAsJsonArray("modules").add(changed);
+        root.addProperty("moduleCount", 1);
+        VRuntimeSnapshot snapshot = VRuntimeSnapshot.load(write(root));
+        VRuntimeSnapshot.Module module = snapshot.match(module("target", 1)).orElseThrow();
+
+        var changes = VRuntimeModuleChanges.between(module);
+        assertEquals(2, changes.size());
+        assertEquals("宽 64.00 → 160.00 Unit (×2.500)", changes.get(0).description());
+        assertEquals("透明度 200 → 175", changes.get(1).description());
+
+        changed.getAsJsonObject("source").addProperty("imageWidthUnit", "PX");
+        changed.getAsJsonObject("runtime").addProperty("alpha", 200);
+        assertTrue(VRuntimeModuleChanges.between(VRuntimeSnapshot.load(write(root)).modules().getFirst())
+                .isEmpty(), "PX dimensions have no directly comparable runtime unit");
+    }
+
+    @Test
     void duplicateNameCanMatchOnlyByFullSourceAndIdenticalSourceIsAmbiguous() throws IOException {
         JsonObject root = fixture();
         root.getAsJsonArray("modules").add(row("same", 1, 100));
@@ -93,14 +113,26 @@ class VRuntimeSnapshotTest {
         assertEquals(document.asmSha256(), snapshot.asmSha256());
         assertEquals(document.luaHash(), snapshot.luaHash());
         int matched = 0;
+        int changed = 0;
+        int ambiguous = 0;
         for (int i = 0; i < skin.getModulesCount(); i++) {
+            VRuntimeSnapshot.Module candidate;
+            try {
+                candidate = snapshot.match(skin, i).orElse(null);
+            } catch (IllegalStateException error) {
+                ambiguous++;
+                continue;
+            }
+            if (candidate != null && !VRuntimeModuleChanges.between(candidate).isEmpty()) changed++;
             if (!skin.getModules(i).getMeta().getDesc().equals("trackbg")) continue;
-            VRuntimeSnapshot.Module row = snapshot.match(skin, i).orElse(null);
+            VRuntimeSnapshot.Module row = candidate;
             if (row == null) continue;
             matched++;
             assertEquals(1110f, row.runtime().height());
         }
         assertEquals(1, matched, "trackbg must map to one source module");
+        assertTrue(ambiguous > 0, "duplicate runtime source configurations remain intentionally unmatched");
+        assertEquals(28, changed, "real capture has 28 directly comparable changed modules");
     }
 
     @Test

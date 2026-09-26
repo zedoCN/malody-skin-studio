@@ -56,6 +56,8 @@ python3 scripts/v_module_state.py /Users/zedo/Projects/Emiria/Library/CodexSkinF
 
 V 编辑器的「运行态对照」页可显式加载这份 JSON，按 `info.asm` 原始字节 SHA-256 和 Emiria 的整套 Lua 文件 hash 校验当前保存版皮肤。`.msp` 与解包目录若这两类内容相同，也可通过校验；**素材文件和目录路径不在校验范围内**，运行值仍属于导出时的皮肤副本。指纹不匹配时不展示组件运行值。选中组件后按原始模块参数寻找唯一对应项；同名或相同参数导致歧义时不会猜测。该页始终只读，尚未保存的编辑草稿不参与匹配；修改皮肤并保存后，需要重新运行 Unity 导出新快照。若替换图片等素材，同样需要重新导出快照才能确认运行画面。
 
+「变化汇总」会按保存版组件顺序列出能唯一匹配、且 **Unit 图片宽高或透明度**数值有变化的模块；点击左侧组件可看该模块的变化和完整原始／运行值。真实 EX Rhythm Master VI 冻结样本中有 28 个这样的模块，`trackbg` 宽高比约为 `1.050562`／`0.925`。PX、百分比尺寸及坐标不能与当前导出的运行值直接按数值比较；变化也不能单凭此报告归因于 Lua，无变化不代表像素画面一致。重复且原始参数完全相同的模块被记为匹配歧义。
+
 ## 同一冻结状态的截图包
 
 若还要在「运行态对照」页看完整 Game View，先保持 `chart-time-frozen`，按顺序：复制一份 `status.json`，执行模块导出并复制为 `modules-before.json`；用 Bridge 的 `editor.visual.game_view_capture` 连续抓两张图，记录各自返回的 `artifact.manifestAbsolutePath`；再次导出并复制为 `modules-after.json`，最后再复制一份 `status.json`。两次截图应使用相同输出尺寸上限，且查看返回的 `gameView.sourceWidth/sourceHeight`；本样本以 `1752×986` 为上限得到未缩放的全帧 PNG。命令的 `width`、`height` 不会设置游戏视口。

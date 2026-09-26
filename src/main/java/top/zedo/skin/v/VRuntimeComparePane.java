@@ -13,6 +13,7 @@ import javafx.stage.FileChooser;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 
 /** Read-only comparison between a saved V skin and an explicitly loaded Unity snapshot. */
@@ -35,6 +36,11 @@ final class VRuntimeComparePane extends VBox {
         loadRuntime.setOnAction(_ -> loadRuntimeSnapshot());
         Button loadCapture = new Button("加载截图包…");
         loadCapture.setOnAction(_ -> loadCaptureBundle());
+        Button showChanges = new Button("变化汇总");
+        showChanges.setOnAction(_ -> {
+            if (runtimeFingerprintsMatch) showRuntimeSummary();
+            else runtimeDetails.setText("先加载与当前保存版皮肤匹配的运行态快照。");
+        });
         runtimeStatus.setWrapText(true);
         runtimeDetails.setEditable(false);
         runtimeDetails.setWrapText(true);
@@ -49,7 +55,7 @@ final class VRuntimeComparePane extends VBox {
         captureImage.setManaged(false);
         captureStatus.setVisible(false);
         captureStatus.setManaged(false);
-        getChildren().addAll(new javafx.scene.layout.HBox(8, loadRuntime, loadCapture), runtimeStatus,
+        getChildren().addAll(new javafx.scene.layout.HBox(8, loadRuntime, loadCapture, showChanges), runtimeStatus,
                 runtimeCaveat, captureStatus, captureImage, runtimeDetails);
         setPadding(new Insets(12));
         VBox.setVgrow(runtimeDetails, Priority.ALWAYS);
@@ -171,7 +177,7 @@ final class VRuntimeComparePane extends VBox {
             return;
         }
         if (currentModule < 0 || currentModule >= document.skin().getModulesCount()) {
-            runtimeDetails.setText("从左侧选择组件，查看这次冻结帧的运行值。");
+            showRuntimeSummary();
             return;
         }
         try {
@@ -187,7 +193,12 @@ final class VRuntimeComparePane extends VBox {
             StringBuilder result = new StringBuilder();
             result.append("组件：").append(module.name()).append("\n工厂：")
                     .append(module.factoryName()).append(" · 图层 ").append(module.factoryLayer())
-                    .append("\n\n原始 info.asm 参数\n")
+                    .append("\n\n可直接比较的变化\n");
+            List<VRuntimeModuleChanges.Change> changes = VRuntimeModuleChanges.between(module);
+            if (changes.isEmpty()) result.append("没有可直接比较的变化；PX／百分比尺寸及坐标未按数值比较。\n");
+            else for (VRuntimeModuleChanges.Change change : changes)
+                result.append(change.description()).append('\n');
+            result.append("\n原始 info.asm 参数\n")
                     .append("X / Y：").append(source.x()).append(' ').append(source.xUnit())
                     .append(" / ").append(source.y()).append(' ').append(source.yUnit())
                     .append("\n偏移 X / Y：").append(source.dx()).append(' ').append(source.dxUnit())
@@ -209,5 +220,37 @@ final class VRuntimeComparePane extends VBox {
         } catch (IllegalStateException error) {
             runtimeDetails.setText("无法唯一匹配保存版组件 #" + (currentModule + 1) + "：" + error.getMessage());
         }
+    }
+
+    private void showRuntimeSummary() {
+        StringBuilder result = new StringBuilder("这次冻结帧中可直接比较的变化（Unit 图片尺寸与透明度）：\n");
+        int matched = 0, missing = 0, ambiguous = 0, changed = 0, listed = 0;
+        for (int i = 0; i < document.skin().getModulesCount(); i++) {
+            try {
+                Optional<VRuntimeSnapshot.Module> match = runtimeSnapshot.match(document.skin(), i);
+                if (match.isEmpty()) { missing++; continue; }
+                matched++;
+                List<VRuntimeModuleChanges.Change> changes = VRuntimeModuleChanges.between(match.get());
+                if (changes.isEmpty()) continue;
+                changed++;
+                if (listed >= 80) continue;
+                listed++;
+                result.append('#').append(i + 1).append(' ').append(match.get().name())
+                        .append(" · 图层 ").append(match.get().factoryLayer()).append("：");
+                for (int j = 0; j < changes.size(); j++) {
+                    if (j > 0) result.append("；");
+                    result.append(changes.get(j).description());
+                }
+                result.append('\n');
+            } catch (IllegalStateException error) {
+                ambiguous++;
+            }
+        }
+        result.insert(0, "已匹配 " + matched + " 个；有可比变化 " + changed + " 个；未匹配 "
+                + missing + " 个；匹配歧义 " + ambiguous + " 个。\n\n");
+        if (changed > listed) result.append("另有 ").append(changed - listed).append(" 个变化未列出。\n");
+        result.append("\n这些变化可能来自 Lua 或游戏自身逻辑，不能单凭数值归因；无变化也不代表像素画面一致。")
+                .append("\n从左侧选择组件可查看完整原始与运行值。");
+        runtimeDetails.setText(result.toString());
     }
 }
