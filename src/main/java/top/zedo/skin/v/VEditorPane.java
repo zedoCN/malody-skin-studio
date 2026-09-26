@@ -25,7 +25,7 @@ import java.nio.file.Path;
 /** Module and metadata editor for a Malody V skin. */
 public final class VEditorPane extends BorderPane {
     private final MspSkinDocument document;
-    private SkinFile.Builder draft;
+    private final VSkinEditModel draft;
     private final ListView<String> modules = new ListView<>();
     private final TextField title = new TextField();
     private final TextField creator = new TextField();
@@ -49,7 +49,7 @@ public final class VEditorPane extends BorderPane {
 
     public VEditorPane(Path path) throws IOException {
         document = MspSkinDocument.open(path);
-        draft = document.skin().toBuilder();
+        draft = new VSkinEditModel(document.skin());
 
         Label heading = new Label("Malody V · " + document.path().getFileName());
         Button save = new Button("保存皮肤");
@@ -61,7 +61,7 @@ public final class VEditorPane extends BorderPane {
 
         VBox metadata = new VBox(7,
                 new Label("皮肤信息"), row("标题", title), row("作者", creator), new Label("描述"), description,
-                row("封面资源", cover), new Label("组件 (" + draft.getModulesCount() + ")"), modules);
+                row("封面资源", cover), new Label("组件 (" + draft.moduleCount() + ")"), modules);
         metadata.setPadding(new Insets(12));
         metadata.setPrefWidth(360);
         description.setPrefRowCount(3);
@@ -86,11 +86,11 @@ public final class VEditorPane extends BorderPane {
         HBox.setHgrow(imageBox, Priority.ALWAYS);
         setCenter(content);
 
-        title.setText(draft.getMeta().getTitle());
-        creator.setText(draft.getMeta().getCreator());
-        description.setText(draft.getMeta().getDesc());
-        cover.setText(draft.getMeta().getCover());
-        for (int i = 0; i < draft.getModulesCount(); i++) modules.getItems().add(moduleLabel(i));
+        title.setText(draft.metadata().getTitle());
+        creator.setText(draft.metadata().getCreator());
+        description.setText(draft.metadata().getDesc());
+        cover.setText(draft.metadata().getCover());
+        for (int i = 0; i < draft.moduleCount(); i++) modules.getItems().add(moduleLabel(i));
         modules.getSelectionModel().selectedIndexProperty().addListener((_, oldIndex, newIndex) -> {
             if (changingSelection) return;
             int next = newIndex.intValue();
@@ -116,13 +116,13 @@ public final class VEditorPane extends BorderPane {
     }
 
     private String moduleLabel(int index) {
-        SkinFile.Module module = draft.getModules(index);
+        SkinFile.Module module = draft.module(index);
         String text = module.hasMeta() ? module.getMeta().getDesc() : "";
         return (index + 1) + ". " + (text.isBlank() ? "(未命名)" : text) + " · " + module.getType();
     }
 
     private void showModule(int index) {
-        boolean selected = index >= 0 && index < draft.getModulesCount();
+        boolean selected = index >= 0 && index < draft.moduleCount();
         for (TextField field : new TextField[]{name, resource, x, y, dx, dy, width, height, alpha, rotate}) field.setDisable(!selected);
         if (!selected) {
             moduleKind.setText("");
@@ -130,20 +130,21 @@ public final class VEditorPane extends BorderPane {
             previewStatus.setText("");
             return;
         }
-        SkinFile.Module module = draft.getModules(index);
+        SkinFile.Module module = draft.module(index);
         SkinFile.ModuleParam param = module.getParam();
+        VSkinEditModel.ModuleFields fields = draft.fields(index);
         moduleKind.setText("用途 " + module.getUsage() + " · 类型 " + module.getType()
                 + " · 位置单位 " + param.getXu() + "/" + param.getYu());
-        name.setText(module.getMeta().getDesc());
-        resource.setText(VModuleResource.value(module));
-        x.setText(Float.toString(param.getX()));
-        y.setText(Float.toString(param.getY()));
-        dx.setText(Float.toString(param.getDx()));
-        dy.setText(Float.toString(param.getDy()));
-        width.setText(module.hasImage() ? Float.toString(module.getImage().getWidth()) : "");
-        height.setText(module.hasImage() ? Float.toString(module.getImage().getHeight()) : "");
-        alpha.setText(Integer.toString(param.getAlpha()));
-        rotate.setText(Integer.toString(param.getRotate()));
+        name.setText(fields.name());
+        resource.setText(fields.resource());
+        x.setText(fields.x());
+        y.setText(fields.y());
+        dx.setText(fields.dx());
+        dy.setText(fields.dy());
+        width.setText(fields.width());
+        height.setText(fields.height());
+        alpha.setText(fields.alpha());
+        rotate.setText(fields.rotate());
         width.setDisable(!module.hasImage());
         height.setDisable(!module.hasImage());
         resource.setDisable(!VModuleResource.canEdit(module));
@@ -181,27 +182,11 @@ public final class VEditorPane extends BorderPane {
     }
 
     private boolean applyModule() {
-        if (currentModule < 0 || currentModule >= draft.getModulesCount()) return true;
+        if (currentModule < 0 || currentModule >= draft.moduleCount()) return true;
         try {
-            SkinFile.Module.Builder module = draft.getModules(currentModule).toBuilder();
-            if (!name.getText().equals(module.getMeta().getDesc())) module.getMetaBuilder().setDesc(name.getText());
-            float newX = parseFinite(x), newY = parseFinite(y), newDx = parseFinite(dx), newDy = parseFinite(dy);
-            int newAlpha = Integer.parseInt(alpha.getText().trim());
-            int newRotate = Integer.parseInt(rotate.getText().trim());
-            SkinFile.ModuleParam original = module.getParam();
-            if (newX != original.getX() || newY != original.getY() || newDx != original.getDx()
-                    || newDy != original.getDy() || newAlpha != original.getAlpha()
-                    || newRotate != original.getRotate()) {
-                module.getParamBuilder().setX(newX).setY(newY).setDx(newDx).setDy(newDy)
-                        .setAlpha(newAlpha).setRotate(newRotate);
-            }
-            if (module.hasImage()) {
-                float newWidth = parseFinite(width), newHeight = parseFinite(height);
-                if (newWidth != module.getImage().getWidth() || newHeight != module.getImage().getHeight()) {
-                    module.getImageBuilder().setWidth(newWidth).setHeight(newHeight);
-                }
-            }
-            draft.setModules(currentModule, VModuleResource.withValue(module.build(), resource.getText()));
+            draft.updateModule(currentModule, new VSkinEditModel.ModuleFields(name.getText(), resource.getText(),
+                    x.getText(), y.getText(), dx.getText(), dy.getText(), width.getText(), height.getText(),
+                    alpha.getText(), rotate.getText()));
             modules.getItems().set(currentModule, moduleLabel(currentModule));
             return true;
         } catch (NumberFormatException error) {
@@ -210,18 +195,11 @@ public final class VEditorPane extends BorderPane {
         }
     }
 
-    private static float parseFinite(TextField field) {
-        float value = Float.parseFloat(field.getText().trim());
-        if (!Float.isFinite(value)) throw new NumberFormatException(field.getText());
-        return value;
-    }
-
     private void save() {
         if (!applyModule()) return;
-        draft.getMetaBuilder().setTitle(title.getText()).setCreator(creator.getText())
-                .setDesc(description.getText()).setCover(cover.getText());
+        draft.updateMetadata(title.getText(), creator.getText(), description.getText(), cover.getText());
         try {
-            document.save(draft.build());
+            document.save(draft.skin());
             if (getScene() != null && getScene().getWindow() instanceof Stage stage) stage.setTitle("Malody V · " + title.getText());
             alert("已保存", document.path().toString());
         } catch (IOException error) {
