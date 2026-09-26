@@ -146,10 +146,10 @@ public class NoteComponentRenderer extends AbstractComponentRenderer {
         //绘制头部
         progressCalculation(rr, progress);
 
-        drawImage(tex, rr.getLeft(), rr.getTop(), rr.getWidth(), rr.getHeight());
+        drawImage(type != 0 && tex5 != null ? tex5 : tex,
+                rr.getLeft(), rr.getTop(), rr.getWidth(), rr.getHeight());
 
 
-        //rr.drawImage(gc, (tex5 != null ? tex5 : tex));
         //rr.drawImageTest(gc, tex);
 
         {
