@@ -41,9 +41,10 @@ Windows 使用 `mvnw.cmd`。首次运行会下载 Maven 和 JavaFX 依赖。应�
 ./mvnw javafx:run '-Djavafx.args=--audit-msz /path/to/skin.msz'
 ./mvnw javafx:run '-Djavafx.args=--inspect-v /path/to/skin.msp'
 ./mvnw javafx:run '-Djavafx.args=--inspect-v --layout /path/to/skin.msp'
+./mvnw javafx:run '-Djavafx.args=--inspect-v --layout --platform android /path/to/skin.msp'
 ```
 
-`--audit-mui` 和 `--audit-msz` 只检查文本解析，不代表所有组件的显示都与游戏一致。后者在隔离临时目录中检查包内每个 `.mui`，结束后清理目录，不改动原包。`--inspect-v --layout` 会列出可投影的静态自定义图片在 1920×1080 参考画布上的矩形、图层和顺序。检查独立 `.mui` 时若目录中包含完整资源，`@texpack` 会照常在皮肤目录下生成 `cache` 拆图文件。
+`--audit-mui` 和 `--audit-msz` 只检查文本解析，不代表所有组件的显示都与游戏一致。后者在隔离临时目录中检查包内每个 `.mui`，结束后清理目录，不改动原包。`--inspect-v --layout` 会列出全屏背景／顶层中可投影的静态自定义图片在 1920×1080 参考视口上的矩形、图层和顺序；默认 Windows，可用 `--platform` 选择 iOS 或 Android。检查独立 `.mui` 时若目录中包含完整资源，`@texpack` 会照常在皮肤目录下生成 `cache` 拆图文件。
 
 ## 项目结构
 
@@ -71,6 +72,6 @@ Emiria 历史中找到的 UIS 解析器属于 5.0.0 原型，可用于核对 `@u
 
 连接可运行 4.3.7 的 Android 设备后，可用 [skin437_probe.py](scripts/skin437_probe.py) 生成九宫格纹理或透视九点标记、从一份 `.msz` 打包测试皮肤、推送到设备并保存带版本和皮肤选择信息的截图。操作步骤、实测坐标和已发现的脚本缓存行为写在校准记录中。[uis437_native.py](scripts/uis437_native.py) 可用相同 APK SHA-256 重建反汇编和属性哈希线索。
 
-V 的 `SkinFile` 结构取自 Emiria 当前源码；两份真实 `.msp` 样本已验证读取、无修改字节级回写和修改标题后的素材及未知字段保留。V 编辑器的“布局概览”按 Emiria 的位置、尺寸、pivot 和同层顺序显示静态自定义图片；条件、动画、特殊模块和不同层的实际容器未建模，因此不等同游戏运行画面。所有组件类型的编辑和游戏内导入仍待验证。
+V 的 `SkinFile` 结构取自 Emiria 当前源码；两份真实 `.msp` 样本已验证读取、无修改字节级回写和修改标题后的素材及未知字段保留。V 编辑器的“布局概览”按 Emiria 的位置、尺寸、pivot 和同层顺序显示全屏背景／顶层的静态自定义图片，按参考视口与所选平台过滤可判定的场景条件。游玩区上下层使用赛道容器，当前不投影；动态条件、动画和特殊模块也不参与，因此不等同游戏运行画面。[V 布局校准记录](docs/v-layout.md) 记录了源码与 Unity 场景证据。所有组件类型的编辑和游戏内导入仍待验证。
 
 V 编辑器保存前检查 `.msp` 原包或文件夹中的 `info.asm` 是否被外部修改；遇到冲突会报错并保留外部文件。成功保存后仍可继续编辑和保存。

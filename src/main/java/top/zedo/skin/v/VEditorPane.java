@@ -57,6 +57,7 @@ public final class VEditorPane extends BorderPane {
     private final ImageView preview = new ImageView();
     private final Pane sceneCanvas = new Pane();
     private final ComboBox<Integer> sceneLayer = new ComboBox<>();
+    private final ComboBox<VSceneLayout.Platform> scenePlatform = new ComboBox<>();
     private final Label sceneStatus = new Label();
     private int currentModule = -1;
     private boolean changingSelection;
@@ -101,6 +102,9 @@ public final class VEditorPane extends BorderPane {
         sceneCanvas.setMaxSize(640, 360);
         sceneCanvas.setClip(new Rectangle(640, 360));
         sceneCanvas.setStyle("-fx-background-color: #20232a;");
+        scenePlatform.getItems().setAll(VSceneLayout.Platform.values());
+        scenePlatform.getSelectionModel().select(VSceneLayout.Platform.WINDOWS);
+        scenePlatform.setOnAction(_ -> refreshScene());
         sceneLayer.setConverter(new StringConverter<>() {
             @Override public String toString(Integer layer) {
                 if (layer == null) return "";
@@ -120,23 +124,25 @@ public final class VEditorPane extends BorderPane {
         }
         sceneLayer.getItems().sort(Integer::compareTo);
         sceneLayer.setOnAction(_ -> refreshScene());
-        Integer firstLayer = null;
+        Integer firstLayer = sceneLayer.getItems().isEmpty() ? null : sceneLayer.getItems().getFirst();
         int mostImages = -1;
         for (int layer : sceneLayer.getItems()) {
+            if (!VSceneLayout.isFullScreenLayer(layer)) continue;
             int count = 0;
             for (SkinFile.Module module : draft.skin().getModulesList()) {
-                if (module.getParam().getLayer() == layer && VSceneLayout.supports(module)) count++;
+                if (module.getParam().getLayer() == layer && VSceneLayout.isStaticImage(module)) count++;
             }
             if (count > mostImages) { firstLayer = layer; mostImages = count; }
         }
         if (firstLayer != null) sceneLayer.getSelectionModel().select(firstLayer);
         Button refreshScene = new Button("应用属性并刷新");
         refreshScene.setOnAction(_ -> { if (applyModule()) refreshScene(); });
-        HBox sceneTools = new HBox(8, new Label("图层"), sceneLayer, refreshScene);
+        HBox sceneTools = new HBox(8, new Label("图层"), sceneLayer,
+                new Label("平台"), scenePlatform, refreshScene);
         sceneTools.setAlignment(Pos.CENTER_LEFT);
-        VBox sceneBox = new VBox(10, new Label("同层静态自定义图片布局概览 · 参考画布 16:9"), sceneTools,
+        VBox sceneBox = new VBox(10, new Label("同层静态自定义图片布局概览 · 参考视口 1920×1080"), sceneTools,
                 new ScrollPane(sceneCanvas), sceneStatus,
-                new Label("依据 Emiria 基础位置、尺寸、pivot 和同层顺序；不等同游戏运行画面。"));
+                new Label("仅全屏背景／顶层；按视口和平台筛选场景条件。游戏内动态效果不参与。"));
         sceneBox.setPadding(new Insets(12));
         Tab resourceTab = new Tab("单资源", imageBox);
         Tab sceneTab = new Tab("布局概览", sceneBox);
@@ -220,6 +226,15 @@ public final class VEditorPane extends BorderPane {
             sceneStatus.setText("此皮肤没有可显示的图层");
             return;
         }
+        if (!VSceneLayout.isFullScreenLayer(layer)) {
+            sceneStatus.setText(layer == 2 || layer == 3
+                    ? "游玩区层使用独立的赛道容器和变换；当前参考画布无法准确投影。"
+                    : "该层没有已核实的全屏容器；暂不投影。");
+            return;
+        }
+        VSceneLayout.Platform platform = scenePlatform.getValue();
+        VSceneLayout.SceneContext context = VSceneLayout.REFERENCE.withPlatform(
+                platform == null ? VSceneLayout.Platform.WINDOWS : platform);
         ArrayList<Integer> indices = new ArrayList<>();
         for (int i = 0; i < draft.moduleCount(); i++) {
             if (draft.module(i).getParam().getLayer() == layer) indices.add(i);
@@ -227,10 +242,13 @@ public final class VEditorPane extends BorderPane {
         indices.sort(Comparator.comparingInt((Integer i) -> draft.module(i).getParam().getOrder())
                 .thenComparingInt(i -> i));
         Map<String, Image> images = new HashMap<>();
-        int shown = 0, unsupported = 0, missing = 0, capped = 0;
+        int shown = 0, unsupported = 0, sceneMismatch = 0, sceneUnknown = 0, missing = 0, capped = 0;
         for (int index : indices) {
             SkinFile.Module module = draft.module(index);
-            if (!VSceneLayout.supports(module)) { unsupported++; continue; }
+            if (!VSceneLayout.isStaticImage(module)) { unsupported++; continue; }
+            VSceneLayout.SceneMatch match = VSceneLayout.sceneMatch(module, context);
+            if (match == VSceneLayout.SceneMatch.MISMATCH) { sceneMismatch++; continue; }
+            if (match == VSceneLayout.SceneMatch.UNKNOWN) { sceneUnknown++; continue; }
             if (shown >= 80) { capped++; continue; }
             String filename = module.getImage().getFile();
             Image image = images.get(filename);
@@ -244,7 +262,7 @@ public final class VEditorPane extends BorderPane {
                 } catch (IOException error) { missing++; continue; }
             }
             try {
-                VSceneLayout.Placement at = VSceneLayout.project(module, 640, 360,
+                VSceneLayout.Placement at = VSceneLayout.project(module, context, 640, 360,
                         image.getWidth(), image.getHeight());
                 ImageView node = new ImageView(image);
                 node.setFitWidth(at.width());
@@ -260,7 +278,9 @@ public final class VEditorPane extends BorderPane {
             } catch (IllegalArgumentException error) { unsupported++; }
         }
         sceneStatus.setText("当前层 " + indices.size() + " 个模块；显示 " + shown + " 个静态图片，"
-                + "跳过 " + unsupported + " 个动态/特殊模块，资源缺失或无法解码 " + missing + " 个。"
+                + "跳过 " + unsupported + " 个动态/特殊模块，"
+                + sceneMismatch + " 个场景条件不匹配，" + sceneUnknown + " 个条件无法静态判定，"
+                + "资源缺失或无法解码 " + missing + " 个。"
                 + (capped > 0 ? "另有 " + capped + " 个超过 80 张显示上限。" : ""));
     }
 

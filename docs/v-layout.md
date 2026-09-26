@@ -1,0 +1,20 @@
+# Malody V 静态布局校准
+
+截至 2026-09-26，“布局概览”只投影背景层（1）和顶层（4）的静态自定义图片。参考视口为 1920×1080；平台默认 Windows，可切换 iOS／Android。它用于检查参数和资源，不是游戏运行截图。
+
+## 依据
+
+- Emiria `Assets/Malody/Scripts/Composer/SkinInstanceFactory.cs` 的 `ApplyBasicParam`、`ApplyImageSize` 决定百分比／Unit 坐标、位移、pivot 和图片尺寸；`SkinModuleBase.cs` 从**直接父容器**的 `RectTransform` 取得尺寸，遇到 `CanvasScaler` 时按参考高度换算 Unit。
+- Emiria `Assets/Malody/Scripts/Scene/Play/Skin/SkinRuntime.cs` 的 `Prepare` 按禁用状态、场景条件、模块有效性筛选并按 `Param.Order` 排序；`IsSceneMatch` 的 Width、Height、Ratio、Platform 使用 `ParentSize` 和平台值。`ScenePlay.cs` 的 `PrepareSkin` 把 `frontCanvas` 矩形赋给 `ParentSize`；`SkinUtil.Runtime.cs` 定义条件比较方式。
+- 在 Unity 2023.2.20f1 的 `PlayModeKey.unity` 中，通过 Editor Bridge 检查层级和 `RectTransform`：Background、Foreground 是 RootPlay 的直接子节点，均有 CanvasScaler；Below、Above 位于 Track 3D → Track Scale → Track Rect → Track Anchor → Track 下，没有 CanvasScaler。在当时的 Editor Game View，背景／顶层宽约 1916.9、高 1080；游玩区上下层为 1680×20000。该尺寸是当次视口的观察值，不能当作所有设备的固定值。检查结束后已关闭附加打开的 PlayModeKey 场景。
+
+因此层 2／3 不能套用全屏画布的投影。场景条件仅对 Width、Height、Ratio、Platform 在选定参考视口下求值；其余需要游玩模式、赛道设置、谱面或玩家状态的条件标记为“无法静态判定”，不猜测显示结果。参考视口并不表示某台设备的实际 `frontCanvas` 尺寸。
+
+## 复查入口
+
+```sh
+./mvnw javafx:run '-Djavafx.args=--inspect-v --layout --platform android /path/to/skin.msp'
+./mvnw -q '-Dmalody.v.samples=/path/to/skin1.msp:/path/to/skin2.msp' -Dtest=VSceneLayoutTest test
+```
+
+命令会输出能投影的矩形，并分别统计游玩区／未知层、场景不匹配和无法静态判定的模块。两份真实样本路径由运行者提供，仓库不收录皮肤素材。后续要支持层 2／3，应先建模对应模式的赛道容器大小、锚点和 Track 3D／Scale 变换，并从 Unity 或实际运行帧验证，再开放这两层的拖拽编辑。

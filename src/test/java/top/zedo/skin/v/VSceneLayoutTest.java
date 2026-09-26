@@ -15,14 +15,20 @@ class VSceneLayoutTest {
     private static SkinFile.Module.Builder image() {
         return SkinFile.Module.newBuilder().setType(VSceneLayout.CUSTOM_IMAGE).setUsage(99)
                 .setParam(SkinFile.ModuleParam.newBuilder().setAlpha(100)
-                        .setPivot(SkinFile.ModuleParamAnchor.Middle))
+                        .setLayer(4).setPivot(SkinFile.ModuleParamAnchor.Middle))
                 .setImage(SkinFile.ModuleParamImage.newBuilder().setFile("a.png")
                         .setWidth(20).setHeight(10));
     }
 
+    private static SkinFile.Module.Builder imageOnLayer(int layer) {
+        SkinFile.Module.Builder result = image();
+        result.getParamBuilder().setLayer(layer);
+        return result;
+    }
+
     @Test void percentPositionAndPivotUseBottomLeftCoordinates() {
         SkinFile.Module module = image().setParam(SkinFile.ModuleParam.newBuilder()
-                .setAlpha(100).setPivot(SkinFile.ModuleParamAnchor.Middle)
+                .setLayer(4).setAlpha(100).setPivot(SkinFile.ModuleParamAnchor.Middle)
                 .setX(50).setY(50).setDx(10).setDy(-10)).build();
         VSceneLayout.Placement p = VSceneLayout.project(module, 640, 360, 400, 200);
         assertEquals(320 + 64 - 64, p.left(), 0.001);
@@ -33,7 +39,7 @@ class VSceneLayoutTest {
 
     @Test void unitPositionAndSingleDimensionPreserveImageRatio() {
         SkinFile.Module module = image().setParam(SkinFile.ModuleParam.newBuilder()
-                .setAlpha(75).setPivot(SkinFile.ModuleParamAnchor.LeftTop)
+                .setLayer(4).setAlpha(75).setPivot(SkinFile.ModuleParamAnchor.LeftTop)
                 .setXu(SkinFile.ModuleParamUnit.Unit).setYu(SkinFile.ModuleParamUnit.Unit)
                 .setDxu(SkinFile.ModuleParamUnit.Unit).setDyu(SkinFile.ModuleParamUnit.Unit)
                 .setX(540).setY(270).setDx(10).setDy(5))
@@ -54,6 +60,47 @@ class VSceneLayoutTest {
                 .setFile("a.png").setWidth(20).setHeight(10).setFlipx(true)).build()));
         assertFalse(VSceneLayout.supports(image().setParam(SkinFile.ModuleParam.newBuilder()
                 .setXu(SkinFile.ModuleParamUnit.PX)).build()));
+        assertFalse(VSceneLayout.supports(imageOnLayer(2).build()));
+    }
+
+    @Test void onlyFullScreenLayersUseReferenceCanvas() {
+        assertTrue(VSceneLayout.supports(imageOnLayer(1).build()));
+        assertTrue(VSceneLayout.supports(imageOnLayer(4).build()));
+        assertFalse(VSceneLayout.supports(imageOnLayer(3).build()));
+    }
+
+    @Test void viewportAndPlatformScenesFollowEmiriaConditions() {
+        SkinFile.Module module = image()
+                .addScenes(SkinFile.ModuleCondition.newBuilder().setSource(3).setValint(1920))
+                .addScenes(SkinFile.ModuleCondition.newBuilder().setSource(5).setValdbl(16d / 9))
+                .addScenes(SkinFile.ModuleCondition.newBuilder().setSource(6).setValint(3))
+                .build();
+        VSceneLayout.SceneContext android = VSceneLayout.REFERENCE.withPlatform(VSceneLayout.Platform.ANDROID);
+        assertEquals(VSceneLayout.SceneMatch.MATCH, VSceneLayout.sceneMatch(module, android));
+        assertTrue(VSceneLayout.supports(module, android));
+        assertEquals(VSceneLayout.SceneMatch.MISMATCH,
+                VSceneLayout.sceneMatch(module, VSceneLayout.REFERENCE));
+        assertFalse(VSceneLayout.supports(module));
+        assertEquals(VSceneLayout.SceneMatch.MISMATCH,
+                VSceneLayout.sceneMatch(module, new VSceneLayout.SceneContext(1080, 1920,
+                        VSceneLayout.Platform.ANDROID)));
+        assertEquals(VSceneLayout.SceneMatch.UNKNOWN, VSceneLayout.sceneMatch(
+                image().addScenes(SkinFile.ModuleCondition.newBuilder().setSource(8).setValint(30)).build(), android));
+    }
+
+    @Test void sceneFlagAndValueTypeDoNotSilentlyMakeModulesVisible() {
+        SkinFile.Module largerViewport = image().addScenes(SkinFile.ModuleCondition.newBuilder()
+                .setSource(3).setFlag(SkinFile.ModuleCondFlag.Large).setValint(1919)).build();
+        assertEquals(VSceneLayout.SceneMatch.MATCH,
+                VSceneLayout.sceneMatch(largerViewport, VSceneLayout.REFERENCE));
+        SkinFile.Module wrongValueType = image().addScenes(SkinFile.ModuleCondition.newBuilder()
+                .setSource(3).setValdbl(1920)).build();
+        assertEquals(VSceneLayout.SceneMatch.UNKNOWN,
+                VSceneLayout.sceneMatch(wrongValueType, VSceneLayout.REFERENCE));
+        SkinFile.Module ratioOccur = image().addScenes(SkinFile.ModuleCondition.newBuilder()
+                .setSource(5).setFlag(SkinFile.ModuleCondFlag.Occur).setValdbl(16d / 9)).build();
+        assertEquals(VSceneLayout.SceneMatch.MISMATCH,
+                VSceneLayout.sceneMatch(ratioOccur, VSceneLayout.REFERENCE));
     }
 
     @Test void realPackagesHaveProjectableStaticImages() throws Exception {
