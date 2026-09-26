@@ -104,6 +104,20 @@ class MuiSkinLoaderTest {
     }
 
     @Test
+    void skippedHeaderDoesNotChangeTheActiveRuntimeSection() throws IOException {
+        Path root = directory.resolve("skin.mui");
+        Files.writeString(root, "_item\n  pos=1,2\n@if false\n_hidden\n  pos=9,9\n@endif\n  pos=3,4\n");
+        UISSkin skin = new UISSkin(root, new ExpressionCalculator());
+
+        var components = new MuiSkinLoader(skin, new HashMap<>()).load(root).components();
+
+        assertFalse(components.containsKey("_hidden"));
+        assertEquals("3,4", components.get("_item").getRawProperty("pos"));
+        assertEquals(new MuiSourceLocation(root.toRealPath(), 1, 7, false),
+                components.get("_item").getPropertySource("pos"));
+    }
+
+    @Test
     void macMatchesWindowsCompatibilityAndMacConditions() throws IOException {
         Path root = directory.resolve("skin.mui");
         Files.writeString(root, "@if windows\nwin\n  type=0\n@endif\n@if mac\nmac\n  type=0\n@endif\n");

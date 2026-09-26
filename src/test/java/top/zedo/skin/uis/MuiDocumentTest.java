@@ -70,6 +70,21 @@ class MuiDocumentTest {
     }
 
     @Test
+    void doesNotEditPropertiesBelongingToAnotherRuntimeSection() throws IOException {
+        Path path = directory.resolve("sections.mui");
+        Files.writeString(path, "_item\n  pos=1,2\n _other\n  pos=3,4\n");
+        MuiDocument document = MuiDocument.read(path);
+
+        assertEquals(1, document.sections().size());
+        assertEquals(1, document.properties(0).size());
+        assertEquals("1,2", document.properties(0).getFirst().value());
+        assertEquals("_item\n  pos=5,6\n _other\n  pos=3,4\n",
+                document.withProperty(0, "pos", "5,6").text());
+        assertEquals("_item\n  pos=1,2\n  size=7,8\n _other\n  pos=3,4\n",
+                document.withProperty(0, "size", "7,8").text());
+    }
+
+    @Test
     void keepsGb18030AndRejectsUnrepresentableValueWithoutTouchingFile() throws IOException {
         Charset legacy = Charset.forName("GB18030");
         Path path = directory.resolve("legacy.mui");

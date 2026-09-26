@@ -3,9 +3,7 @@ package top.zedo.skin.uis;
 import top.zedo.skin.plist.PlistParser;
 import top.zedo.zxncore.ZXLogger;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.StringReader;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -57,67 +55,61 @@ final class MuiSkinLoader {
             if (scannedDirectories.add(directory)) {
                 indexImages(directory);
             }
-            try (BufferedReader reader = new BufferedReader(new StringReader(MuiTextFile.read(normalized).text()))) {
-                List<UISComponent> currentComponents = new ArrayList<>();
-                Deque<Boolean> conditions = new ArrayDeque<>();
-                boolean skip = false;
-                boolean animation = false;
-                int lineNumber = 0;
-                int sectionLine = 0;
-                boolean grouped = false;
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    lineNumber++;
-                    boolean property = line.startsWith("\t") || line.startsWith("  ");
-                    line = line.trim();
-                    if (line.isEmpty() || line.startsWith("#")) continue;
-                    if (line.startsWith("@")) {
-                        String[] args = line.split(" +", 3);
-                        if (args[0].equals("@if")) {
-                            conditions.push(!skip && args.length >= 2 && conditionMatches(args[1]));
-                            skip = conditions.contains(false);
-                        } else if (args[0].equals("@endif")) {
-                            if (!conditions.isEmpty()) conditions.pop();
-                            skip = conditions.contains(false);
-                        } else if (!skip) {
-                            command(args, directory);
-                        }
-                        continue;
+            MuiSyntaxTree syntax = MuiSyntaxTree.parse(MuiTextFile.read(normalized).text());
+            List<UISComponent> currentComponents = new ArrayList<>();
+            Deque<Boolean> conditions = new ArrayDeque<>();
+            boolean skip = false;
+            boolean animation = false;
+            int sectionLine = 0;
+            boolean grouped = false;
+            for (MuiSyntaxTree.Statement statement : syntax.statements()) {
+                if (statement instanceof MuiSyntaxTree.Trivia) continue;
+                if (statement instanceof MuiSyntaxTree.Directive directive) {
+                    String[] args = directive.arguments().toArray(String[]::new);
+                    if (args[0].equals("@if")) {
+                        conditions.push(!skip && args.length >= 2 && conditionMatches(args[1]));
+                        skip = conditions.contains(false);
+                    } else if (args[0].equals("@endif")) {
+                        if (!conditions.isEmpty()) conditions.pop();
+                        skip = conditions.contains(false);
+                    } else if (!skip) {
+                        command(args, directory);
                     }
-                    if (skip) continue;
-                    if (property) {
-                        int delimiter = line.indexOf('=');
-                        if (delimiter < 0 || currentComponents.isEmpty()) {
-                            throw new IOException("无效的 MUI 属性: " + normalized + ": " + line);
-                        }
-                        String name = line.substring(0, delimiter);
-                        String value = line.substring(delimiter + 1);
-                        if (animation) {
-                            for (UISComponent component : currentComponents) component.putAnimation(value);
-                        } else {
-                            boolean embedded = name.equals("motion") && value.startsWith(":name=");
-                            String embeddedName = "ea_" + currentComponents.getFirst().getFullName();
-                            for (int i = 0; i < currentComponents.size(); i++) {
-                                currentComponents.get(i).putProperty(name, embedded ? embeddedName : value, i,
-                                        new MuiSourceLocation(normalized, sectionLine, lineNumber, grouped));
-                            }
-                            if (embedded) {
-                                UISComponent component = new UISComponent(":" + embeddedName, imagePaths, skin);
-                                component.putAnimation(value.substring(6));
-                                components.put(component.getFullName(), component);
-                            }
-                        }
+                    continue;
+                }
+                if (skip) continue;
+                if (statement instanceof MuiSyntaxTree.MalformedProperty ||
+                        statement instanceof MuiSyntaxTree.Property && currentComponents.isEmpty()) {
+                    throw new IOException("无效的 MUI 属性: " + normalized + ": " + statement.line().body().trim());
+                }
+                if (statement instanceof MuiSyntaxTree.Property property) {
+                    String name = property.runtimeName();
+                    String value = property.runtimeValue();
+                    if (animation) {
+                        for (UISComponent component : currentComponents) component.putAnimation(value);
                     } else {
-                        currentComponents.clear();
-                        List<String> names = parseComponentNames(line);
-                        sectionLine = lineNumber;
-                        grouped = names.size() > 1;
-                        for (String name : names) {
-                            currentComponents.add(components.computeIfAbsent(name,
-                                    key -> new UISComponent(key, imagePaths, skin)));
+                        boolean embedded = name.equals("motion") && value.startsWith(":name=");
+                        String embeddedName = "ea_" + currentComponents.getFirst().getFullName();
+                        for (int i = 0; i < currentComponents.size(); i++) {
+                            currentComponents.get(i).putProperty(name, embedded ? embeddedName : value, i,
+                                    new MuiSourceLocation(normalized, sectionLine, property.lineNumber(), grouped));
                         }
-                        animation = line.startsWith(":");
+                        if (embedded) {
+                            UISComponent component = new UISComponent(":" + embeddedName, imagePaths, skin);
+                            component.putAnimation(value.substring(6));
+                            components.put(component.getFullName(), component);
+                        }
                     }
+                } else if (statement instanceof MuiSyntaxTree.Section section) {
+                    currentComponents.clear();
+                    List<String> names = parseComponentNames(section.name());
+                    sectionLine = section.lineNumber();
+                    grouped = names.size() > 1;
+                    for (String name : names) {
+                        currentComponents.add(components.computeIfAbsent(name,
+                                key -> new UISComponent(key, imagePaths, skin)));
+                    }
+                    animation = section.name().startsWith(":");
                 }
             }
         } finally {

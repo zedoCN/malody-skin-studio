@@ -60,6 +60,7 @@ Windows 使用 `mvnw.cmd`。首次运行会下载 Maven 和 JavaFX 依赖。应�
 ## 项目结构
 
 - `src/main/java/top/zedo/skin/uis/ui`：JavaFX 编辑界面与代码区
+- `src/main/java/top/zedo/skin/uis/MuiSyntaxTree.java`：预览与原文编辑共用的 `.mui` 语法结构，保留指令、段、属性、源码行与值范围
 - `src/main/java/top/zedo/skin/uis/MuiSkinLoader.java`：读取 `.mui`、`@include` 与图片资源，生成一次加载结果
 - `src/main/java/top/zedo/skin/uis/MuiDocument.java`：保留 `.mui` 原文结构的属性编辑与保存模型
 - `src/main/java/top/zedo/skin/uis/MuiPositionEditor.java`：把预览组件的位移校验并写回其真实源属性行
@@ -77,7 +78,7 @@ Windows 使用 `mvnw.cmd`。首次运行会下载 Maven 和 JavaFX 依赖。应�
 
 ## 格式依据与校准边界
 
-Emiria 历史中找到的 UIS 解析器属于 5.0.0 原型，可用于核对 `@unit`、`w`、条件、定义与继承等规则；它不足以证明 4.3.7 的每处运行时行为。当前 `.mui` 预览保持原编辑器已接近游戏的画面作为基线。`UISPerspectiveTransform` 中的角度多项式来自本编辑器 2024 年的经验标定，未在 Emiria 原型中找到对应实现，现有测试固定了它的输出。4.x 样本中透明度常用 0–100，而 Emiria 5.0 原型按 0–255 处理，不能直接套用。
+Emiria 历史中找到的 UIS 解析器属于 5.0.0 原型，可用于核对 `@unit`、`w`、条件、定义与继承等规则；它不足以证明 4.3.7 的每处运行时行为。本项目的 `MuiSyntaxTree` 负责保留原文结构和属性来源，条件、引用及数值仍由现有加载与求值逻辑处理，尚不是 Emiria 那种完整表达式 AST。当前 `.mui` 预览保持原编辑器已接近游戏的画面作为基线。`UISPerspectiveTransform` 中的角度多项式来自本编辑器 2024 年的经验标定，未在 Emiria 原型中找到对应实现，现有测试固定了它的输出。4.x 样本中透明度常用 0–100，而 Emiria 5.0 原型按 0–255 处理，不能直接套用。
 
 4.3.7 APK 的内置 UIS 脚本、真机校准及当前绘制差距见 [4.3.7 校准记录](docs/4.3.7-audit.md)；ARM64 原生解析器和组件工厂的静态取证见 [4.3.7 原生实现记录](docs/4.3.7-native.md)。`fsize` 单位与默认值、初始坐标取整、旋转截断、透明度量化和普通图片的像素锚点已按原生证据修正；其他类型的像素锚点与完整透视矩阵仍需处理。
 

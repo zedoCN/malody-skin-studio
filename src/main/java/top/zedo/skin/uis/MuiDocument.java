@@ -13,31 +13,30 @@ import java.util.Objects;
  */
 public final class MuiDocument {
     private final MuiTextFile.Decoded source;
-    private final List<Line> lines;
+    private final MuiSyntaxTree syntax;
 
-    private MuiDocument(MuiTextFile.Decoded source, List<Line> lines) {
+    private MuiDocument(MuiTextFile.Decoded source, MuiSyntaxTree syntax) {
         this.source = source;
-        this.lines = List.copyOf(lines);
+        this.syntax = syntax;
     }
 
     public static MuiDocument read(Path path) throws IOException {
         MuiTextFile.Decoded source = MuiTextFile.read(path);
-        return new MuiDocument(source, splitLines(source.text()));
+        return new MuiDocument(source, MuiSyntaxTree.parse(source.text()));
     }
 
     public String text() {
-        StringBuilder result = new StringBuilder();
-        for (Line line : lines) result.append(line.body).append(line.ending);
-        return result.toString();
+        return syntax.text();
     }
 
     /** Ordered literal headers, not the effective components after includes/conditions. */
     public List<Section> sections() {
         List<Section> result = new ArrayList<>();
         int ordinal = 0;
-        for (int i = 0; i < lines.size(); i++) {
-            String body = lines.get(i).body;
-            if (isHeader(body)) result.add(new Section(ordinal++, body.trim(), i + 1));
+        for (MuiSyntaxTree.Statement statement : syntax.statements()) {
+            if (statement instanceof MuiSyntaxTree.Section section && section.literal()) {
+                result.add(new Section(ordinal++, section.name(), section.lineNumber()));
+            }
         }
         return List.copyOf(result);
     }
@@ -47,13 +46,13 @@ public final class MuiDocument {
         List<Section> sections = sections();
         int start = sections.get(sectionIndex).lineNumber() - 1;
         int end = sectionIndex + 1 < sections.size()
-                ? sections.get(sectionIndex + 1).lineNumber() - 1 : lines.size();
+                ? sections.get(sectionIndex + 1).lineNumber() - 1 : syntax.lines().size();
         List<PropertyValue> result = new ArrayList<>();
         for (int i = start + 1; i < end; i++) {
-            Property property = parseProperty(lines.get(i).body);
-            if (property != null) {
-                result.add(new PropertyValue(property.name,
-                        lines.get(i).body.substring(property.valueStart, property.valueEnd), i + 1));
+            if (syntax.statementAt(i) instanceof MuiSyntaxTree.Property property
+                    && property.sectionLine() == sections.get(sectionIndex).lineNumber()
+                    && !property.name().isEmpty()) {
+                result.add(new PropertyValue(property.name(), property.value(), i + 1));
             }
         }
         return List.copyOf(result);
@@ -78,36 +77,33 @@ public final class MuiDocument {
         Section section = sections.get(sectionIndex);
         int start = section.lineNumber() - 1;
         int end = sectionIndex + 1 < sections.size()
-                ? sections.get(sectionIndex + 1).lineNumber() - 1 : lines.size();
+                ? sections.get(sectionIndex + 1).lineNumber() - 1 : syntax.lines().size();
         int lastProperty = -1;
         int target = -1;
         for (int i = start + 1; i < end; i++) {
-            Property property = parseProperty(lines.get(i).body);
-            if (property == null) continue;
+            if (!(syntax.statementAt(i) instanceof MuiSyntaxTree.Property property)
+                    || property.sectionLine() != section.lineNumber() || property.name().isEmpty()) continue;
             lastProperty = i;
-            if (property.name.equals(name)) target = i;
+            if (property.name().equals(name)) target = i;
         }
-        List<Line> changed = new ArrayList<>(lines);
+        List<MuiSyntaxTree.SourceLine> changed = new ArrayList<>(syntax.lines());
         if (target >= 0) {
-            Line line = lines.get(target);
-            Property property = parseProperty(line.body);
-            String updated = line.body.substring(0, property.valueStart) + value
-                    + line.body.substring(property.valueEnd);
-            changed.set(target, new Line(updated, line.ending));
+            MuiSyntaxTree.Property property = (MuiSyntaxTree.Property) syntax.statementAt(target);
+            changed.set(target, property.withValue(value));
         } else {
             int after = lastProperty >= 0 ? lastProperty : start;
             String indent = lastProperty >= 0
-                    ? leadingWhitespace(lines.get(lastProperty).body) : preferredIndent();
-            String ending = !lines.get(after).ending.isEmpty()
-                    ? lines.get(after).ending : preferredEnding();
-            if (lines.get(after).ending.isEmpty()) {
-                Line previous = lines.get(after);
-                changed.set(after, new Line(previous.body, ending));
+                    ? leadingWhitespace(syntax.lines().get(lastProperty).body()) : preferredIndent();
+            String ending = !syntax.lines().get(after).ending().isEmpty()
+                    ? syntax.lines().get(after).ending() : preferredEnding();
+            if (syntax.lines().get(after).ending().isEmpty()) {
+                MuiSyntaxTree.SourceLine previous = syntax.lines().get(after);
+                changed.set(after, new MuiSyntaxTree.SourceLine(previous.body(), ending));
             }
-            changed.add(after + 1, new Line(indent + name + "=" + value,
-                    after + 1 < lines.size() ? ending : ""));
+            changed.add(after + 1, new MuiSyntaxTree.SourceLine(indent + name + "=" + value,
+                    after + 1 < syntax.lines().size() ? ending : ""));
         }
-        return new MuiDocument(source, changed);
+        return new MuiDocument(source, MuiSyntaxTree.fromLines(changed));
     }
 
     /** Replace one exact source property, rejecting edits after its line has changed. */
@@ -118,20 +114,16 @@ public final class MuiDocument {
         if (value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0) {
             throw new IllegalArgumentException("MUI 属性值不能包含换行");
         }
-        if (lineNumber < 1 || lineNumber > lines.size()) {
+        if (lineNumber < 1 || lineNumber > syntax.lines().size()) {
             throw new IllegalStateException("MUI 源属性行已变动: " + lineNumber);
         }
-        Line line = lines.get(lineNumber - 1);
-        Property property = parseProperty(line.body);
-        if (property == null || !property.name.equals(name)
-                || !line.body.substring(property.valueStart, property.valueEnd).equals(expectedValue)) {
+        if (!(syntax.statementAt(lineNumber - 1) instanceof MuiSyntaxTree.Property property)
+                || !property.name().equals(name) || !property.value().equals(expectedValue)) {
             throw new IllegalStateException("MUI 源属性行已变动: " + lineNumber);
         }
-        String updated = line.body.substring(0, property.valueStart) + value
-                + line.body.substring(property.valueEnd);
-        List<Line> changed = new ArrayList<>(lines);
-        changed.set(lineNumber - 1, new Line(updated, line.ending));
-        return new MuiDocument(source, changed);
+        List<MuiSyntaxTree.SourceLine> changed = new ArrayList<>(syntax.lines());
+        changed.set(lineNumber - 1, property.withValue(value));
+        return new MuiDocument(source, MuiSyntaxTree.fromLines(changed));
     }
 
     /** Guard both the literal section and the property before editing an effective component. */
@@ -142,13 +134,12 @@ public final class MuiDocument {
         int sectionIndex = source.sectionLine() - 1;
         int propertyIndex = source.propertyLine() - 1;
         if (source.grouped() || sectionIndex < 0 || propertyIndex <= sectionIndex
-                || propertyIndex >= lines.size() || !lines.get(sectionIndex).body.trim().equals(expectedHeader)) {
+                || propertyIndex >= syntax.lines().size()
+                || !(syntax.statementAt(sectionIndex) instanceof MuiSyntaxTree.Section section)
+                || !section.name().equals(expectedHeader)
+                || !(syntax.statementAt(propertyIndex) instanceof MuiSyntaxTree.Property property)
+                || property.sectionLine() != source.sectionLine()) {
             throw new IllegalStateException("MUI 组件段已变动: " + source.file() + ":" + source.sectionLine());
-        }
-        for (int i = sectionIndex + 1; i < propertyIndex; i++) {
-            if (isHeader(lines.get(i).body)) {
-                throw new IllegalStateException("MUI 属性已移动到其他组件段: " + source.file() + ":" + source.propertyLine());
-            }
         }
         return replacePropertyAtLine(source.propertyLine(), name, expectedValue, value);
     }
@@ -158,15 +149,17 @@ public final class MuiDocument {
     }
 
     private String preferredIndent() {
-        for (Line line : lines) {
-            if (parseProperty(line.body) != null) return leadingWhitespace(line.body);
+        for (MuiSyntaxTree.Statement statement : syntax.statements()) {
+            if (statement instanceof MuiSyntaxTree.Property property && !property.name().isEmpty()) {
+                return leadingWhitespace(property.line().body());
+            }
         }
         return "\t";
     }
 
     private String preferredEnding() {
-        for (Line line : lines) {
-            if (!line.ending.isEmpty()) return line.ending;
+        for (MuiSyntaxTree.SourceLine line : syntax.lines()) {
+            if (!line.ending().isEmpty()) return line.ending();
         }
         return System.lineSeparator();
     }
@@ -177,45 +170,6 @@ public final class MuiDocument {
         return body.substring(0, i);
     }
 
-    private static boolean isHeader(String body) {
-        String trimmed = body.trim();
-        return !trimmed.isEmpty() && !trimmed.startsWith("#") && !trimmed.startsWith("@")
-                && parseProperty(body) == null && !Character.isWhitespace(body.charAt(0));
-    }
-
-    private static Property parseProperty(String body) {
-        if (!(body.startsWith("\t") || body.startsWith("  "))) return null;
-        String trimmed = body.trim();
-        if (trimmed.isEmpty() || trimmed.startsWith("#") || trimmed.startsWith("@")) return null;
-        int equals = body.indexOf('=');
-        if (equals < 0) return null;
-        String name = body.substring(0, equals).trim();
-        if (name.isEmpty()) return null;
-        int valueStart = equals + 1;
-        while (valueStart < body.length() && Character.isWhitespace(body.charAt(valueStart))) valueStart++;
-        int valueEnd = body.length();
-        while (valueEnd > valueStart && Character.isWhitespace(body.charAt(valueEnd - 1))) valueEnd--;
-        return new Property(name, valueStart, valueEnd);
-    }
-
-    private static List<Line> splitLines(String text) {
-        List<Line> result = new ArrayList<>();
-        int start = 0;
-        for (int i = 0; i < text.length(); i++) {
-            char ch = text.charAt(i);
-            if (ch != '\r' && ch != '\n') continue;
-            int end = i + 1;
-            if (ch == '\r' && end < text.length() && text.charAt(end) == '\n') end++;
-            result.add(new Line(text.substring(start, i), text.substring(i, end)));
-            i = end - 1;
-            start = end;
-        }
-        if (start < text.length()) result.add(new Line(text.substring(start), ""));
-        return result;
-    }
-
     public record Section(int index, String header, int lineNumber) { }
     public record PropertyValue(String name, String value, int lineNumber) { }
-    private record Line(String body, String ending) { }
-    private record Property(String name, int valueStart, int valueEnd) { }
 }
